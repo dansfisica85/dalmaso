@@ -1,0 +1,294 @@
+/* ============================================= */
+/* PAINEL FLUTUANTE DA EXTENSÃO                  */
+/* ============================================= */
+
+#sed-extrator-painel {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  width: 380px;
+  background: #fff;
+  border: 2px solid #007bff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  z-index: 2147483647;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 14px;
+  color: #333;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+#sed-extrator-painel.minimizado {
+  width: 200px;
+  height: auto !important;
+}
+
+#sed-extrator-painel.minimizado .sed-corpo {
+  display: none;
+}
+
+/* CABEÇALHO */
+.sed-cabecalho {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: move;
+  user-select: none;
+}
+
+.sed-cabecalho h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sed-cabecalho-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.sed-cabecalho-btns button {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sed-cabecalho-btns button:hover {
+  background: rgba(255,255,255,0.4);
+}
+
+/* CORPO */
+.sed-corpo {
+  padding: 16px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* BOTÕES PRINCIPAIS */
+.sed-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  width: 100%;
+  margin-bottom: 8px;
+  transition: all 0.2s;
+}
+
+.sed-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.sed-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.sed-btn-iniciar {
+  background: #28a745;
+  color: white;
+}
+
+.sed-btn-pausar {
+  background: #ffc107;
+  color: #333;
+}
+
+.sed-btn-continuar {
+  background: #17a2b8;
+  color: white;
+}
+
+.sed-btn-parar {
+  background: #dc3545;
+  color: white;
+}
+
+.sed-btn-baixar {
+  background: #007bff;
+  color: white;
+}
+
+.sed-btn-limpar {
+  background: #6c757d;
+  color: white;
+}
+
+.sed-btn-grupo {
+  display: flex;
+  gap: 8px;
+}
+
+.sed-btn-grupo .sed-btn {
+  flex: 1;
+}
+
+/* BARRA DE PROGRESSO */
+.sed-progresso-container {
+  margin: 12px 0;
+}
+
+.sed-progresso-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #666;
+}
+
+.sed-progresso-barra-bg {
+  background: #e9ecef;
+  border-radius: 10px;
+  height: 20px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sed-progresso-barra {
+  background: linear-gradient(90deg, #28a745, #20c997);
+  height: 100%;
+  border-radius: 10px;
+  transition: width 0.3s ease;
+  min-width: 0;
+}
+
+.sed-progresso-texto {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
+  font-weight: bold;
+  color: #333;
+  text-shadow: 0 0 3px white;
+}
+
+/* STATUS */
+.sed-status {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 12px;
+  border-left: 4px solid #007bff;
+}
+
+.sed-status-erro {
+  border-left-color: #dc3545;
+  background: #fff5f5;
+}
+
+.sed-status-ok {
+  border-left-color: #28a745;
+  background: #f0fff0;
+}
+
+/* LOG */
+.sed-log {
+  background: #1e1e1e;
+  color: #0f0;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+  max-height: 150px;
+  overflow-y: auto;
+  margin: 8px 0;
+  line-height: 1.4;
+}
+
+.sed-log-item {
+  padding: 2px 0;
+  border-bottom: 1px solid #333;
+}
+
+.sed-log-item:last-child {
+  border-bottom: none;
+}
+
+.sed-log-erro { color: #ff6b6b; }
+.sed-log-ok { color: #51cf66; }
+.sed-log-info { color: #74c0fc; }
+
+/* CONFIG */
+.sed-config {
+  margin: 8px 0;
+}
+
+.sed-config label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.sed-config input[type="number"] {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.sed-config-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.sed-config-row > div {
+  flex: 1;
+}
+
+/* SEPARADOR */
+.sed-separador {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 12px 0;
+}
+
+/* ESTATÍSTICAS */
+.sed-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.sed-stat-box {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 8px;
+  text-align: center;
+}
+
+.sed-stat-numero {
+  font-size: 24px;
+  font-weight: bold;
+  color: #007bff;
+}
+
+.sed-stat-label {
+  font-size: 11px;
+  color: #888;
+}
