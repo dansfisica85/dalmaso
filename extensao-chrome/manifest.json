@@ -9,7 +9,8 @@
       "matches": ["*://sed.educacao.sp.gov.br/*", "*://*.educacao.sp.gov.br/*"],
       "js": ["content.js"],
       "css": ["style.css"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "icons": {

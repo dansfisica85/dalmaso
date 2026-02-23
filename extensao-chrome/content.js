@@ -232,6 +232,40 @@
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  /**
+   * Clica em um elemento de forma segura, evitando violações de CSP.
+   * Se o elemento for um <a> com href="javascript:...", extrai o código
+   * e o executa diretamente no contexto da página, em vez de navegar pela URL.
+   */
+  function clicarSeguro(el) {
+    if (!el) return;
+    const tagName = el.tagName ? el.tagName.toUpperCase() : '';
+    const href = el.getAttribute ? el.getAttribute('href') : null;
+
+    if (tagName === 'A' && href && href.trim().toLowerCase().startsWith('javascript:')) {
+      // Extrair o código JS do href (remover "javascript:")
+      const codigo = href.trim().substring('javascript:'.length);
+      if (codigo && codigo !== 'void(0)' && codigo !== 'void(0);' && codigo !== ';') {
+        try {
+          // Disparar o evento click primeiro (para onclick handlers)
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          // Executar o código JS diretamente (funciona porque estamos no world MAIN)
+          new Function(codigo)();
+        } catch (e) {
+          console.warn('[Extrator SED] Erro ao executar JS do href:', e);
+          // Fallback: tentar click normal
+          el.click();
+        }
+      } else {
+        // href é javascript:void(0) - só disparar o evento click
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      }
+    } else {
+      // Elemento normal - click padrão
+      el.click();
+    }
+  }
+
   async function aguardarComPausa(ms) {
     const fim = Date.now() + ms;
     while (Date.now() < fim) {
@@ -407,7 +441,7 @@
     for (const sel of seletores) {
       const btn = document.querySelector(sel);
       if (btn && btn.offsetParent !== null) {
-        btn.click();
+        clicarSeguro(btn);
         return true;
       }
     }
@@ -425,7 +459,7 @@
     for (const aba of abas) {
       const texto = aba.textContent.trim().toLowerCase();
       if (texto.includes(textoAba.toLowerCase())) {
-        aba.click();
+        clicarSeguro(aba);
         await aguardarComPausa(estado.delays.entreAcoes);
         return true;
       }
@@ -613,7 +647,7 @@
             continue;
           }
 
-          lupa.click();
+          clicarSeguro(lupa);
           await aguardarComPausa(estado.delays.carregamento);
 
           // 2. Aba Dados Pessoais
@@ -687,7 +721,7 @@
       if (btnProximo) {
         estado.paginaAtual++;
         log(`Indo para página ${estado.paginaAtual}...`, 'info');
-        btnProximo.click();
+        clicarSeguro(btnProximo);
         await aguardarComPausa(estado.delays.carregamento);
       } else {
         log('Todas as páginas processadas!', 'ok');
