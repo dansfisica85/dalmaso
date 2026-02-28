@@ -1,13 +1,18 @@
 // ========================
-// CONTENT.JS - Extrator SED (Ficha do Aluno) v3
+// CONTENT.JS - Extrator SED (Ficha do Aluno) v4
 // ========================
-// Detecção robusta de modal/dialog + fluxo:
-//   1. Clicar na lupa (Visualizar)
-//   2. Esperar a ficha do aluno aparecer (modal, dialog, overlay, div, etc.)
-//   3. Extrair Dados Pessoais
-//   4. Clicar em Telefones → extrair
-//   5. Fechar a ficha
-//   6. Repetir para o próximo aluno e próxima página
+// Abordagem SIMPLIFICADA: sem detecção de modal.
+// Detecta MUDANÇA DE CONTEÚDO na página após clicar na lupa.
+// Funciona independente de modal, iframe, navegação AJAX ou troca de view.
+//
+// Fluxo:
+//   1. Guardar estado da página (tabela de alunos)
+//   2. Clicar na lupa (Visualizar)
+//   3. Esperar a página MUDAR (texto "Dados do Aluno" ou "Dados Pessoais" surgir)
+//   4. Extrair TUDO que estiver visível na tela
+//   5. Clicar aba Telefones → extrair
+//   6. Clicar "Voltar" → esperar tabela de alunos reaparecer
+//   7. Próximo aluno / próxima página
 
 (function () {
   'use strict';
@@ -25,7 +30,7 @@
 
   function sendLog(texto, nivel = 'info') {
     console.log(`[SED][${nivel}] ${texto}`);
-    try { chrome.runtime.sendMessage({ type: 'LOG', texto, nivel }); } catch (e) { /* popup fechado */ }
+    try { chrome.runtime.sendMessage({ type: 'LOG', texto, nivel }); } catch (e) {}
   }
 
   function sendProgress(current, total, nome) {
@@ -41,154 +46,86 @@
   }
 
   // ========================
-  // DETECÇÃO ROBUSTA DE MODAL/FICHA DO ALUNO
+  // DETECTAR ESTADO DA PÁGINA
   // ========================
-  // O SED pode usar: Bootstrap modal, jQuery UI dialog, div overlay, ou qualquer container.
-  // Estratégia: tentar MUITOS seletores e também procurar pelo texto "Dados do Aluno" no DOM.
 
-  const MODAL_SELECTORS = [
-    '.modal.in',
-    '.modal.show',
-    '.modal.fade.in',
-    '.modal[style*="display: block"]',
-    '.modal[style*="display:block"]',
-    '.modal:not([style*="display: none"]):not([style*="display:none"])',
-    '.ui-dialog',
-    '[role="dialog"]',
-    '[role="document"]',
-    '.modal-dialog',
-    '.modal-content',
-    '#modalDetalhe',
-    '#modal-detalhe',
-    '#modalAluno',
-    '#modal-aluno',
-    '#ModalFichaAluno',
-    '#modalConsulta',
-    '[id*="modal"][id*="luno"]',
-    '[id*="modal"][id*="etalhe"]',
-    '[id*="Modal"]',
-    '.overlay-content',
-    '.dialog-content',
-    '.panel-detalhe',
-    '.ficha-aluno',
-    '[class*="modal"][class*="open"]',
-    '[class*="modal"][class*="active"]',
-    '[class*="dialog"]',
-    '.modal-backdrop + .modal',
-  ];
+  // Verifica se a FICHA DO ALUNO está visível na página
+  // (procura texto característico OU abas características)
+  function fichaEstaAberta() {
+    const bodyText = document.body.innerText || '';
+    // Textos que só aparecem na ficha do aluno
+    if (bodyText.includes('Dados do Aluno:') || bodyText.includes('Dados do Aluno :')) return true;
 
-  function encontrarModalAberto() {
-    // Estratégia 1: Tentar todos os seletores CSS conhecidos
-    for (const sel of MODAL_SELECTORS) {
-      try {
-        const els = document.querySelectorAll(sel);
-        for (const el of els) {
-          // Verificar se está visível
-          const style = window.getComputedStyle(el);
-          if (style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 50) {
-            sendLog(`Modal encontrado via seletor: ${sel}`, 'debug');
-            return el;
-          }
-        }
-      } catch (e) { /* seletor inválido, ignorar */ }
+    // Procurar abas características da ficha
+    const abas = document.querySelectorAll('a, li, [role="tab"], button');
+    let countAbas = 0;
+    const abasEsperadas = ['Dados Pessoais', 'Documentos', 'Deficiência', 'Endereço Residencial', 'Telefones'];
+    for (const el of abas) {
+      const txt = el.textContent.trim();
+      if (abasEsperadas.some(a => txt === a)) countAbas++;
     }
+    // Se encontrou pelo menos 3 das abas esperadas, a ficha está aberta
+    if (countAbas >= 3) return true;
 
-    // Estratégia 2: Procurar qualquer elemento que contenha "Dados do Aluno" no cabeçalho
-    const allElements = document.querySelectorAll('div, section, article, aside, main');
-    for (const el of allElements) {
-      if (el.offsetHeight < 100) continue;
-      const style = window.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') continue;
-
-      // Verificar se contém o texto do cabeçalho da ficha
-      const firstText = el.innerText?.substring(0, 500) || '';
-      if (firstText.includes('Dados do Aluno') || firstText.includes('Dados Pessoais')) {
-        // Verificar se parece um overlay/modal (z-index alto ou position fixed/absolute)
-        const zIndex = parseInt(style.zIndex) || 0;
-        const isOverlay = style.position === 'fixed' || style.position === 'absolute' || zIndex > 10;
-        if (isOverlay || el.classList.contains('modal') || el.getAttribute('role') === 'dialog') {
-          sendLog(`Modal encontrado via texto "Dados do Aluno"`, 'debug');
-          return el;
-        }
-        // Subir para o container pai que pode ser o modal
-        let parent = el.parentElement;
-        while (parent && parent !== document.body) {
-          const pStyle = window.getComputedStyle(parent);
-          const pZ = parseInt(pStyle.zIndex) || 0;
-          if (pStyle.position === 'fixed' || pStyle.position === 'absolute' || pZ > 10
-              || parent.classList.contains('modal') || parent.getAttribute('role') === 'dialog') {
-            sendLog(`Modal encontrado via parent de "Dados do Aluno"`, 'debug');
-            return parent;
-          }
-          parent = parent.parentElement;
-        }
-        // Se não achou overlay, retornar mesmo assim — é provavelmente o conteúdo da ficha
-        sendLog(`Usando container com "Dados do Aluno" como modal`, 'debug');
-        return el;
-      }
-    }
-
-    // Estratégia 3: Verificar se houve mudança significativa no body (novo elemento grande com z-index)
-    const allDivs = document.querySelectorAll('body > div, body > section');
-    let bestCandidate = null;
-    let bestZ = 0;
-    for (const div of allDivs) {
-      const st = window.getComputedStyle(div);
-      if (st.display === 'none' || st.visibility === 'hidden') continue;
-      const z = parseInt(st.zIndex) || 0;
-      if (z > bestZ && div.offsetHeight > 200) {
-        // Verificar se não é um backdrop vazio
-        if (div.innerText?.trim().length > 20) {
-          bestCandidate = div;
-          bestZ = z;
-        }
-      }
-    }
-    if (bestCandidate && bestZ > 0) {
-      sendLog(`Modal encontrado via z-index alto (${bestZ})`, 'debug');
-      return bestCandidate;
-    }
-
-    return null;
+    return false;
   }
 
-  function waitForModal(timeout = 15000) {
-    return new Promise((resolve, reject) => {
+  // Verifica se a TABELA DE ALUNOS (lista principal) está visível
+  function tabelaEstaVisivel() {
+    const tabelas = document.querySelectorAll('table');
+    for (const t of tabelas) {
+      const headers = Array.from(t.querySelectorAll('th')).map(th => th.textContent.trim().toLowerCase());
+      const temNome = headers.some(h => h.includes('nome do aluno') || h.includes('nome'));
+      const temRA = headers.some(h => h === 'ra' || h.includes('ra'));
+      if (temNome && temRA) return true;
+    }
+    return false;
+  }
+
+  // Esperar até que a ficha do aluno apareça na página
+  function esperarFichaAbrir(timeout = 20000) {
+    return new Promise((resolve) => {
       const start = Date.now();
       const check = () => {
-        const modal = encontrarModalAberto();
-        if (modal) return resolve(modal);
-        if (Date.now() - start > timeout) {
-          // Última tentativa: usar document como fallback
-          sendLog('Timeout esperando modal, usando document como fallback', 'warn');
-          return resolve(document);
+        if (fichaEstaAberta()) {
+          sendLog('  ✓ Ficha do aluno detectada na página!');
+          return resolve(true);
         }
-        setTimeout(check, 400);
+        if (Date.now() - start > timeout) {
+          sendLog('  ⚠ Timeout esperando ficha abrir. Tentando extrair mesmo assim...', 'warn');
+          return resolve(false);
+        }
+        setTimeout(check, 500);
       };
       check();
     });
   }
 
-  function waitForModalClose(timeout = 10000) {
+  // Esperar até que a tabela de alunos reapareça (após fechar ficha)
+  function esperarTabelaVoltar(timeout = 15000) {
     return new Promise((resolve) => {
       const start = Date.now();
       const check = () => {
-        const modal = encontrarModalAberto();
-        if (!modal || modal === document) return resolve();
-        if (Date.now() - start > timeout) return resolve();
-        setTimeout(check, 400);
+        if (tabelaEstaVisivel() && !fichaEstaAberta()) {
+          sendLog('  ✓ Tabela de alunos reapareceu!');
+          return resolve(true);
+        }
+        if (Date.now() - start > timeout) {
+          sendLog('  ⚠ Timeout esperando tabela voltar', 'warn');
+          return resolve(false);
+        }
+        setTimeout(check, 500);
       };
-      // Esperar um momento antes de começar a checar
-      setTimeout(check, 500);
+      check();
     });
   }
 
   // ========================
-  // LER CAMPOS DO MODAL DO SED
+  // LER CAMPOS DA PÁGINA (usa document inteiro)
   // ========================
 
-  function lerCampoPorLabel(container, labelText) {
-    const labels = container.querySelectorAll('label, strong, th, dt, .control-label, .field-label');
+  function lerCampoPorLabel(labelText) {
+    const labels = document.querySelectorAll('label, strong, th, dt, .control-label, .field-label');
     for (const lbl of labels) {
       const text = lbl.textContent.trim().replace(/:$/, '').replace(/\?$/, '').trim();
       if (!text.toLowerCase().includes(labelText.toLowerCase())) continue;
@@ -209,11 +146,12 @@
         const spans = group.querySelectorAll('span, p, div');
         for (const s of spans) {
           if (s === lbl || s.contains(lbl) || lbl.contains(s)) continue;
+          if (s.querySelectorAll('label, strong, input, select').length > 0) continue;
           if (s.children.length === 0 && s.textContent.trim()) return s.textContent.trim();
         }
       }
 
-      // Próximo elemento irmão direto
+      // Próximo elemento irmão
       let next = lbl.nextElementSibling;
       if (next) {
         const input = next.matches?.('input, select, textarea') ? next : next.querySelector?.('input, select, textarea');
@@ -226,15 +164,15 @@
         }
         if (next.textContent) {
           const val = next.textContent.trim();
-          if (val && val !== text) return val;
+          if (val && val !== text && val.length < 200) return val;
         }
       }
     }
     return '';
   }
 
-  function lerCheckboxPorLabel(container, labelText) {
-    const labels = container.querySelectorAll('label, strong');
+  function lerCheckboxPorLabel(labelText) {
+    const labels = document.querySelectorAll('label, strong');
     for (const lbl of labels) {
       const text = lbl.textContent.trim().replace(/:$/, '').replace(/\?$/, '').trim();
       if (!text.toLowerCase().includes(labelText.toLowerCase())) continue;
@@ -254,8 +192,8 @@
     return false;
   }
 
-  function lerRadioPorLabel(container, labelText) {
-    const labels = container.querySelectorAll('label, strong');
+  function lerRadioPorLabel(labelText) {
+    const labels = document.querySelectorAll('label, strong');
     for (const lbl of labels) {
       const text = lbl.textContent.trim().replace(/:$/, '').replace(/\?$/, '').trim();
       if (!text.toLowerCase().includes(labelText.toLowerCase())) continue;
@@ -270,37 +208,31 @@
             return radio.parentElement?.textContent?.trim() || 'Sim';
           }
         }
-        const checked = group.querySelector('input[type="checkbox"]:checked');
-        if (checked) return 'Sim';
       }
     }
     return '';
   }
 
   // ========================
-  // CLICAR EM UMA ABA DO MODAL
+  // CLICAR EM UMA ABA
   // ========================
 
-  async function clicarAba(container, nomeAba) {
-    // Buscar em todo o document (as abas podem estar fora do container do modal)
-    const searchIn = [container, document];
-    for (const ctx of searchIn) {
-      const tabs = ctx.querySelectorAll(
-        '.nav-tabs a, .nav-pills a, .nav a, [role="tab"], ' +
-        'a[data-toggle="tab"], a[data-bs-toggle="tab"], ' +
-        'a[href*="#"], li a, button[data-toggle], .tab-link, .tab'
-      );
-      for (const tab of tabs) {
-        const text = tab.textContent.trim();
-        if (text === nomeAba || text.toLowerCase() === nomeAba.toLowerCase()) {
-          sendLog(`Clicando na aba "${nomeAba}"...`);
-          tab.click();
-          await sleep(1500);
-          return true;
-        }
+  async function clicarAba(nomeAba) {
+    const tabs = document.querySelectorAll(
+      '.nav-tabs a, .nav-pills a, .nav a, [role="tab"], ' +
+      'a[data-toggle="tab"], a[data-bs-toggle="tab"], ' +
+      'a[href*="#"], li a, button[data-toggle], .tab-link, .tab'
+    );
+    for (const tab of tabs) {
+      const text = tab.textContent.trim();
+      if (text === nomeAba || text.toLowerCase() === nomeAba.toLowerCase()) {
+        sendLog(`  Clicando na aba "${nomeAba}"...`);
+        tab.click();
+        await sleep(2000); // Esperar conteúdo da aba carregar
+        return true;
       }
     }
-    sendLog(`Aba "${nomeAba}" não encontrada`, 'warn');
+    sendLog(`  Aba "${nomeAba}" não encontrada`, 'warn');
     return false;
   }
 
@@ -309,7 +241,25 @@
   // ========================
 
   function coletarDadosTabela() {
-    const rows = document.querySelectorAll('table tbody tr');
+    const tabelas = document.querySelectorAll('table');
+    let tabelaAlunos = null;
+
+    // Encontrar a tabela que tem coluna "Nome do Aluno" ou "RA"
+    for (const t of tabelas) {
+      const headers = Array.from(t.querySelectorAll('th')).map(th => th.textContent.trim());
+      if (headers.some(h => h.includes('Nome do Aluno') || h.includes('Nome')) &&
+          headers.some(h => h === 'RA' || h.includes('RA'))) {
+        tabelaAlunos = t;
+        break;
+      }
+    }
+
+    if (!tabelaAlunos) {
+      sendLog('Tabela de alunos não encontrada!', 'error');
+      return [];
+    }
+
+    const rows = tabelaAlunos.querySelectorAll('tbody tr');
     const alunos = [];
 
     rows.forEach((tr) => {
@@ -324,19 +274,21 @@
       const dataNasc = cells[5]?.textContent?.trim() || '';
       const filiacao1 = cells[6]?.textContent?.trim() || '';
 
-      // Botão Visualizar na coluna 7 — pode ser <a>, <button>, ou <i> dentro de <a>
-      const visualizarCell = cells[7];
+      // Botão Visualizar (lupa) — pode estar em qualquer coluna a partir da 7
       let btnVisualizar = null;
-      if (visualizarCell) {
-        // Procurar link ou botão clicável
-        btnVisualizar = visualizarCell.querySelector('a[href], button, a[onclick], span[onclick]');
-        if (!btnVisualizar) {
-          // Tentar qualquer elemento clicável dentro da célula
-          btnVisualizar = visualizarCell.querySelector('a, i, span, img');
-        }
-        if (btnVisualizar && (btnVisualizar.tagName === 'I' || btnVisualizar.tagName === 'SPAN' || btnVisualizar.tagName === 'IMG')) {
-          const parent = btnVisualizar.closest('a') || btnVisualizar.closest('button');
-          if (parent) btnVisualizar = parent;
+      for (let c = 7; c < cells.length; c++) {
+        const cell = cells[c];
+        // Procurar por ícone de lupa (fa-search, glyphicon-search, etc.) ou link/botão
+        const lupa = cell.querySelector(
+          'a[title*="isualizar"], a[title*="onsultar"], a[title*="etalhe"], ' +
+          'button[title*="isualizar"], [onclick*="isualizar"], [onclick*="etalhe"], ' +
+          'i.fa-search, i.fa-eye, i.glyphicon-search, i.glyphicon-eye-open, ' +
+          'span.fa-search, span.fa-eye, a, button'
+        );
+        if (lupa) {
+          // Se é um ícone, pegar o link pai
+          btnVisualizar = lupa.closest('a') || lupa.closest('button') || lupa;
+          break;
         }
       }
 
@@ -348,42 +300,42 @@
   }
 
   // ========================
-  // EXTRAIR DADOS PESSOAIS (aba padrão que já abre)
+  // EXTRAIR TODOS OS DADOS DA FICHA
   // ========================
 
-  async function extrairDadosPessoais(container) {
-    // Tentar clicar na aba Dados Pessoais (caso não esteja selecionada por padrão)
-    await clicarAba(container, 'Dados Pessoais');
-
+  async function extrairDadosFicha() {
     const d = {};
 
-    d['Data de Alteração'] = lerCampoPorLabel(container, 'Data de Alteração');
-    d['Nome'] = lerCampoPorLabel(container, 'Nome');
-    d['Informar Nome Social?'] = lerCheckboxPorLabel(container, 'Nome Social') ? 'Sim' : 'Não';
-    d['Informar Nome Afetivo?'] = lerCheckboxPorLabel(container, 'Nome Afetivo') ? 'Sim' : 'Não';
-    d['Sexo'] = lerCampoPorLabel(container, 'Sexo');
-    d['Raça/Cor'] = lerCampoPorLabel(container, 'Raça/Cor') || lerCampoPorLabel(container, 'Raca/Cor');
-    d['Aluno com transtorno(s) que impacta(m) o desenvolvimento da aprendizagem'] =
-      lerCheckboxPorLabel(container, 'transtorno') ? 'Sim' : 'Não';
-    d['Tipo Sanguíneo'] = lerCampoPorLabel(container, 'Tipo Sangu');
-    d['Idade Mínima Especial'] = lerCheckboxPorLabel(container, 'Idade Mínima') ? 'Sim' : 'Não';
-    d['Data de Nascimento'] = lerCampoPorLabel(container, 'Data de Nascimento');
-    d['Falecimento'] = lerCheckboxPorLabel(container, 'Falecimento') ? 'Sim' : 'Não';
-    d['Refugiado'] = lerCheckboxPorLabel(container, 'Refugiado') ? 'Sim' : 'Não';
-    d['Emancipado'] = lerCheckboxPorLabel(container, 'Emancipado') ? 'Sim' : 'Não';
+    // === DADOS PESSOAIS (aba padrão que já abre) ===
+    await clicarAba('Dados Pessoais');
 
-    const allText = container.innerText || '';
-    const irmaoMatch = allText.match(/Irmão\(s\)\s*(\d+)/i);
+    d['Data de Alteração'] = lerCampoPorLabel('Data de Alteração');
+    d['Nome'] = lerCampoPorLabel('Nome');
+    d['Informar Nome Social?'] = lerCheckboxPorLabel('Nome Social') ? 'Sim' : 'Não';
+    d['Informar Nome Afetivo?'] = lerCheckboxPorLabel('Nome Afetivo') ? 'Sim' : 'Não';
+    d['Sexo'] = lerCampoPorLabel('Sexo');
+    d['Raça/Cor'] = lerCampoPorLabel('Raça/Cor') || lerCampoPorLabel('Raca/Cor');
+    d['Aluno com transtorno(s) que impacta(m) o desenvolvimento da aprendizagem'] =
+      lerCheckboxPorLabel('transtorno') ? 'Sim' : 'Não';
+    d['Tipo Sanguíneo'] = lerCampoPorLabel('Tipo Sangu');
+    d['Idade Mínima Especial'] = lerCheckboxPorLabel('Idade Mínima') ? 'Sim' : 'Não';
+    d['Data de Nascimento'] = lerCampoPorLabel('Data de Nascimento');
+    d['Falecimento'] = lerCheckboxPorLabel('Falecimento') ? 'Sim' : 'Não';
+    d['Refugiado'] = lerCheckboxPorLabel('Refugiado') ? 'Sim' : 'Não';
+    d['Emancipado'] = lerCheckboxPorLabel('Emancipado') ? 'Sim' : 'Não';
+
+    const allText = document.body.innerText || '';
+    const irmaoMatch = allText.match(/Irmão\(s\)\s*[:\s]*(\d+)/i);
     d['Irmão(s)'] = irmaoMatch ? irmaoMatch[1] : '0';
 
-    d['E-Mail'] = lerCampoPorLabel(container, 'E-Mail');
-    d['E-Mail Google'] = lerCampoPorLabel(container, 'E-Mail Google');
-    d['E-Mail Microsoft'] = lerCampoPorLabel(container, 'E-Mail Microsoft');
-    d['Filiação 1'] = lerCampoPorLabel(container, 'Filiação 1');
-    d['Filiação 2'] = lerCampoPorLabel(container, 'Filiação 2');
-    d['Participa do Programa Bolsa Família'] = lerCheckboxPorLabel(container, 'Bolsa Família') ? 'Sim' : 'Não';
+    d['E-Mail'] = lerCampoPorLabel('E-Mail');
+    d['E-Mail Google'] = lerCampoPorLabel('E-Mail Google');
+    d['E-Mail Microsoft'] = lerCampoPorLabel('E-Mail Microsoft');
+    d['Filiação 1'] = lerCampoPorLabel('Filiação 1');
+    d['Filiação 2'] = lerCampoPorLabel('Filiação 2');
+    d['Participa do Programa Bolsa Família'] = lerCheckboxPorLabel('Bolsa Família') ? 'Sim' : 'Não';
 
-    // RA — extrair do cabeçalho: "Dados do Aluno: NOME - RA:000122759213-9/SP - Data Nascimento: dd/mm/aaaa"
+    // RA — extrair do cabeçalho: "Dados do Aluno: NOME - RA:000122759213-9/SP ..."
     let raNum = '', raDig = '', raUf = '';
     const raMatch = allText.match(/RA[:\s]*(\d{9,15})[- ]*(\d)\/(\w{2})/i);
     if (raMatch) {
@@ -391,17 +343,17 @@
       raDig = raMatch[2];
       raUf = raMatch[3];
     }
-    if (!raNum) raNum = lerCampoPorLabel(container, 'RA');
+    if (!raNum) raNum = lerCampoPorLabel('RA');
     d['RA'] = raNum;
     d['nrDigRa'] = raDig;
     d['sgUfRa'] = raUf;
 
-    d['Identificação Única - Educacenso'] = lerCampoPorLabel(container, 'Educacenso') || lerCampoPorLabel(container, 'Identificação Única');
-    d['Nacionalidade'] = lerCampoPorLabel(container, 'Nacionalidade');
-    d['Município de Nascimento'] = lerCampoPorLabel(container, 'Município de Nascimento');
+    d['Identificação Única - Educacenso'] = lerCampoPorLabel('Educacenso') || lerCampoPorLabel('Identificação Única');
+    d['Nacionalidade'] = lerCampoPorLabel('Nacionalidade');
+    d['Município de Nascimento'] = lerCampoPorLabel('Município de Nascimento');
 
     d['UFNascimento'] = '';
-    const munLabels = container.querySelectorAll('label');
+    const munLabels = document.querySelectorAll('label');
     for (const lbl of munLabels) {
       if (lbl.textContent.includes('Município de Nascimento')) {
         const group = lbl.closest('.form-group, .row, div') || lbl.parentElement;
@@ -416,50 +368,50 @@
       }
     }
 
-    d['Sigilo'] = lerCheckboxPorLabel(container, 'Sigilo') ? 'Sim' : 'Não';
-    d['Quilombola'] = lerCheckboxPorLabel(container, 'Quilombola') ? 'Sim' : 'Não';
-    d['Membro de Comunidade Circense e/ou Cigana'] = lerCheckboxPorLabel(container, 'Circense') ? 'Sim' : 'Não';
+    d['Sigilo'] = lerCheckboxPorLabel('Sigilo') ? 'Sim' : 'Não';
+    d['Quilombola'] = lerCheckboxPorLabel('Quilombola') ? 'Sim' : 'Não';
+    d['Membro de Comunidade Circense e/ou Cigana'] = lerCheckboxPorLabel('Circense') ? 'Sim' : 'Não';
+    d['Possui internet em casa'] = lerRadioPorLabel('internet em casa') || (lerCheckboxPorLabel('internet') ? 'Sim' : 'Não');
+    d['Possui smartphone, tablet ou notebook pessoal'] = lerRadioPorLabel('smartphone') || (lerCheckboxPorLabel('smartphone') ? 'Sim' : 'Não');
 
-    const internetVal = lerRadioPorLabel(container, 'internet em casa');
-    d['Possui internet em casa'] = internetVal || (lerCheckboxPorLabel(container, 'internet') ? 'Sim' : 'Não');
-    const smartVal = lerRadioPorLabel(container, 'smartphone');
-    d['Possui smartphone, tablet ou notebook pessoal'] = smartVal || (lerCheckboxPorLabel(container, 'smartphone') ? 'Sim' : 'Não');
-
-    // === DOCUMENTOS (extrair do mesmo container se visível, ou clicar na aba) ===
-    await clicarAba(container, 'Documentos');
-    d['CIN'] = lerCheckboxPorLabel(container, 'CIN') ? 'Sim' : (lerCampoPorLabel(container, 'CIN') || 'Não');
-    d['Data Emissão do CIN'] = lerCampoPorLabel(container, 'Emissão do CIN') || lerCampoPorLabel(container, 'Emissão CIN');
-    d['CPF'] = lerCampoPorLabel(container, 'CPF');
-    d['Documento Civil RG'] = lerCampoPorLabel(container, 'RG') || lerCampoPorLabel(container, 'Documento Civil');
-    d['Data Emissão RG/RNM'] = lerCampoPorLabel(container, 'Emissão RG') || lerCampoPorLabel(container, 'Data Emissão');
-    d['Data de emissão'] = lerCampoPorLabel(container, 'Data de emissão');
-    d['Cert. Matr.'] = lerCampoPorLabel(container, 'Cert') || lerCampoPorLabel(container, 'Certidão');
-    d['NIS'] = lerCampoPorLabel(container, 'NIS');
-    d['Cartão Nacional de Saúde - SUS'] = lerCampoPorLabel(container, 'SUS') || lerCampoPorLabel(container, 'Saúde');
+    // === DOCUMENTOS ===
+    sendLog('  Extraindo Documentos...');
+    await clicarAba('Documentos');
+    d['CIN'] = lerCheckboxPorLabel('CIN') ? 'Sim' : (lerCampoPorLabel('CIN') || 'Não');
+    d['Data Emissão do CIN'] = lerCampoPorLabel('Emissão do CIN') || lerCampoPorLabel('Emissão CIN');
+    d['CPF'] = lerCampoPorLabel('CPF');
+    d['Documento Civil RG'] = lerCampoPorLabel('RG') || lerCampoPorLabel('Documento Civil');
+    d['Data Emissão RG/RNM'] = lerCampoPorLabel('Emissão RG') || lerCampoPorLabel('Data Emissão');
+    d['Data de emissão'] = lerCampoPorLabel('Data de emissão');
+    d['Cert. Matr.'] = lerCampoPorLabel('Cert') || lerCampoPorLabel('Certidão');
+    d['NIS'] = lerCampoPorLabel('NIS');
+    d['Cartão Nacional de Saúde - SUS'] = lerCampoPorLabel('SUS') || lerCampoPorLabel('Saúde');
 
     // === DEFICIÊNCIA ===
-    await clicarAba(container, 'Deficiência');
-    d['Investigação de deficiência'] = lerCheckboxPorLabel(container, 'Investigação') ? 'Sim' : 'Não';
-    d['Estudante com Deficiência'] = lerCheckboxPorLabel(container, 'Deficiência') ? 'Sim' : 'Não';
-    d['Altas Habilidades/Superdotação'] = lerCheckboxPorLabel(container, 'Altas Habilidades') ? 'Sim' : 'Não';
-    d['Laudo Médico'] = lerCheckboxPorLabel(container, 'Laudo') ? 'Sim' : 'Não';
-    d['Nível de Apoio'] = lerCampoPorLabel(container, 'Nível de Apoio') || '1';
-    d['Necessita de Profissional de apoio Escolar?'] = lerCheckboxPorLabel(container, 'Profissional de apoio') ? 'Sim' : 'Não';
-    d['Mobilidade Reduzida'] = lerCheckboxPorLabel(container, 'Mobilidade') ? 'Sim' : 'Não';
-    d['Recursos'] = lerCampoPorLabel(container, 'Recursos') || '';
+    sendLog('  Extraindo Deficiência...');
+    await clicarAba('Deficiência');
+    d['Investigação de deficiência'] = lerCheckboxPorLabel('Investigação') ? 'Sim' : 'Não';
+    d['Estudante com Deficiência'] = lerCheckboxPorLabel('Deficiência') ? 'Sim' : 'Não';
+    d['Altas Habilidades/Superdotação'] = lerCheckboxPorLabel('Altas Habilidades') ? 'Sim' : 'Não';
+    d['Laudo Médico'] = lerCheckboxPorLabel('Laudo') ? 'Sim' : 'Não';
+    d['Nível de Apoio'] = lerCampoPorLabel('Nível de Apoio') || '1';
+    d['Necessita de Profissional de apoio Escolar?'] = lerCheckboxPorLabel('Profissional de apoio') ? 'Sim' : 'Não';
+    d['Mobilidade Reduzida'] = lerCheckboxPorLabel('Mobilidade') ? 'Sim' : 'Não';
+    d['Recursos'] = lerCampoPorLabel('Recursos') || '';
 
     // === ENDEREÇO RESIDENCIAL ===
-    await clicarAba(container, 'Endereço Residencial');
-    d['CEP'] = lerCampoPorLabel(container, 'CEP');
-    d['Localização/Zona de Residência'] = lerCampoPorLabel(container, 'Localização') || lerCampoPorLabel(container, 'Zona');
-    d['Localização Diferenciada'] = lerCampoPorLabel(container, 'Diferenciada') || 'Não está em área de localização diferenciada';
-    d['Endereço - Nº'] = lerCampoPorLabel(container, 'Endereço') || lerCampoPorLabel(container, 'Logradouro');
-    d['EnderecoNR'] = lerCampoPorLabel(container, 'Número') || lerCampoPorLabel(container, 'Nº');
-    d['Complemento'] = lerCampoPorLabel(container, 'Complemento');
-    d['Bairro'] = lerCampoPorLabel(container, 'Bairro');
-    d['Cidade - UF'] = lerCampoPorLabel(container, 'Cidade') || lerCampoPorLabel(container, 'Município');
-    d['Latitude/Longitude'] = lerCampoPorLabel(container, 'Latitude');
-    d['Longitude'] = lerCampoPorLabel(container, 'Longitude');
+    sendLog('  Extraindo Endereço...');
+    await clicarAba('Endereço Residencial');
+    d['CEP'] = lerCampoPorLabel('CEP');
+    d['Localização/Zona de Residência'] = lerCampoPorLabel('Localização') || lerCampoPorLabel('Zona');
+    d['Localização Diferenciada'] = lerCampoPorLabel('Diferenciada') || '';
+    d['Endereço - Nº'] = lerCampoPorLabel('Endereço') || lerCampoPorLabel('Logradouro');
+    d['EnderecoNR'] = lerCampoPorLabel('Número') || lerCampoPorLabel('Nº');
+    d['Complemento'] = lerCampoPorLabel('Complemento');
+    d['Bairro'] = lerCampoPorLabel('Bairro');
+    d['Cidade - UF'] = lerCampoPorLabel('Cidade') || lerCampoPorLabel('Município');
+    d['Latitude/Longitude'] = lerCampoPorLabel('Latitude');
+    d['Longitude'] = lerCampoPorLabel('Longitude');
 
     return d;
   }
@@ -468,43 +420,109 @@
   // EXTRAIR TELEFONES
   // ========================
 
-  async function extrairTelefones(container) {
-    await clicarAba(container, 'Telefones');
+  async function extrairTelefones() {
+    sendLog('  Extraindo Telefones...');
+    await clicarAba('Telefones');
 
     const telefones = [];
+    const tabelas = document.querySelectorAll('table');
+    for (const tabela of tabelas) {
+      const headers = Array.from(tabela.querySelectorAll('th')).map(th => th.textContent.trim().toLowerCase());
+      const hasPhone = headers.some(h =>
+        h.includes('tipo telefone') || h.includes('ddd') || h.includes('número') || h.includes('telefone')
+      );
 
-    // Buscar tabelas em todo document (a aba pode renderizar fora do container do modal)
-    const searchContexts = [container, document];
-    for (const ctx of searchContexts) {
-      const tabelas = ctx.querySelectorAll('table');
-      for (const tabela of tabelas) {
-        const headers = Array.from(tabela.querySelectorAll('th')).map(th => th.textContent.trim().toLowerCase());
-        const hasPhone = headers.some(h => h.includes('tipo telefone') || h.includes('ddd') || h.includes('número'));
-
-        if (hasPhone) {
-          const rows = tabela.querySelectorAll('tbody tr');
-          rows.forEach(row => {
-            const cells = Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim());
-            if (cells.length >= 3) {
-              const tipo = cells[0] || 'Celular';
-              const ddd = cells[1] || '';
-              const numero = cells[2] || '';
-              if (numero && /\d/.test(numero)) {
-                const tel = ddd ? `(${ddd}) ${numero}` : numero;
-                const entry = `${tipo}: ${tel}`;
-                if (!telefones.includes(entry)) telefones.push(entry);
-              }
+      if (hasPhone) {
+        const rows = tabela.querySelectorAll('tbody tr');
+        rows.forEach(row => {
+          const cells = Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim());
+          if (cells.length >= 3) {
+            const tipo = cells[0] || 'Celular';
+            const ddd = cells[1] || '';
+            const numero = cells[2] || '';
+            if (numero && /\d/.test(numero)) {
+              const tel = ddd ? `(${ddd}) ${numero}` : numero;
+              const entry = `${tipo}: ${tel}`;
+              if (!telefones.includes(entry)) telefones.push(entry);
             }
-          });
-
-          // Se encontrou telefones, não precisa continuar buscando
-          if (telefones.length > 0) break;
-        }
+          }
+        });
+        if (telefones.length > 0) break;
       }
-      if (telefones.length > 0) break;
     }
 
     return telefones.join(' | ');
+  }
+
+  // ========================
+  // VOLTAR PARA A LISTA DE ALUNOS
+  // ========================
+
+  async function voltarParaLista() {
+    sendLog('  Voltando para lista de alunos...');
+
+    // TENTATIVA 1: Botão "Voltar"
+    const allBtns = document.querySelectorAll('a, button, input[type="button"], input[type="submit"]');
+    for (const btn of allBtns) {
+      const txt = (btn.textContent?.trim() || btn.value || '').toLowerCase();
+      if (txt === 'voltar' || txt === 'fechar' || txt === 'cancelar') {
+        if (btn.offsetParent !== null) {
+          sendLog(`  Clicando em "${btn.textContent?.trim() || btn.value}"...`);
+          btn.click();
+          await sleep(1000);
+          const voltou = await esperarTabelaVoltar(10000);
+          if (voltou) return true;
+        }
+      }
+    }
+
+    // TENTATIVA 2: Botão × (close)
+    const closeButtons = document.querySelectorAll(
+      'button.close, .btn-close, [aria-label="Close"], [aria-label="Fechar"], ' +
+      '[data-dismiss="modal"], [data-bs-dismiss="modal"], .modal .close'
+    );
+    for (const btn of closeButtons) {
+      if (btn.offsetParent !== null) {
+        sendLog('  Clicando no botão fechar (×)...');
+        btn.click();
+        await sleep(1000);
+        const voltou = await esperarTabelaVoltar(10000);
+        if (voltou) return true;
+      }
+    }
+
+    // TENTATIVA 3: Tecla Escape
+    sendLog('  Tentando tecla Escape...');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+    await sleep(1000);
+    if (tabelaEstaVisivel()) return true;
+
+    // TENTATIVA 4: jQuery modal hide
+    try {
+      if (window.jQuery || window.$) {
+        const jq = window.jQuery || window.$;
+        jq('.modal').modal('hide');
+        await sleep(1000);
+        if (tabelaEstaVisivel()) return true;
+      }
+    } catch (e) {}
+
+    // TENTATIVA 5: Clicar no backdrop
+    const backdrop = document.querySelector('.modal-backdrop, .ui-widget-overlay');
+    if (backdrop) {
+      backdrop.click();
+      await sleep(1000);
+      if (tabelaEstaVisivel()) return true;
+    }
+
+    // TENTATIVA 6: history.back() como último recurso
+    sendLog('  Tentando history.back()...');
+    history.back();
+    await sleep(2000);
+    if (tabelaEstaVisivel()) return true;
+
+    sendLog('  ⚠ Não conseguiu voltar para a lista!', 'warn');
+    return false;
   }
 
   // ========================
@@ -531,7 +549,7 @@
       }
     }
 
-    const cabecalho = `×Dados do Aluno: ${nome} - RA:${raNum}-${raDig}/${raUf} - Data Nascimento: ${dataNasc}`;
+    const cabecalho = `Dados do Aluno: ${nome} - RA:${raNum}-${raDig}/${raUf} - Data Nascimento: ${dataNasc}`;
     const raCabecalho = `${raNum}-${raDig}/${raUf}`;
 
     return {
@@ -567,7 +585,7 @@
       'Participa do Programa Bolsa Família': d['Participa do Programa Bolsa Família'] || 'Não',
       'RA': raNum,
       'Identificação Única - Educacenso': d['Identificação Única - Educacenso'] || '',
-      'Nacionalidade': d['Nacionalidade'] || 'Brasileira',
+      'Nacionalidade': d['Nacionalidade'] || '',
       'Município de Nascimento': d['Município de Nascimento'] || '',
       'Sigilo': d['Sigilo'] || 'Não',
       'Quilombola': d['Quilombola'] || 'Não',
@@ -588,14 +606,14 @@
       'Necessita de Profissional de apoio Escolar?': d['Necessita de Profissional de apoio Escolar?'] || 'Não',
       'Mobilidade Reduzida': d['Mobilidade Reduzida'] || 'Não',
       'CEP': d['CEP'] || '',
-      'Localização/Zona de Residência': d['Localização/Zona de Residência'] || 'Urbana',
-      'Localização Diferenciada': d['Localização Diferenciada'] || 'Não está em área de localização diferenciada',
+      'Localização/Zona de Residência': d['Localização/Zona de Residência'] || '',
+      'Localização Diferenciada': d['Localização Diferenciada'] || '',
       'Endereço - Nº': d['Endereço - Nº'] || '',
       'Complemento': d['Complemento'] || '',
       'Bairro': d['Bairro'] || '',
       'Cidade - UF': d['Cidade - UF'] || '',
       'Latitude/Longitude': d['Latitude/Longitude'] || '',
-      'Mostrar102550100registros': '10',
+      'Mostrar102550100registros': '',
       'Idade': idade,
       'nrDigRa': raDig,
       'sgUfRa': raUf,
@@ -611,78 +629,6 @@
       'Data Emissão do CIN': d['Data Emissão do CIN'] || '',
       'E-Mail': d['E-Mail'] || '',
     };
-  }
-
-  // ========================
-  // FECHAR A FICHA/MODAL
-  // ========================
-
-  async function fecharModal() {
-    sendLog('Fechando ficha do aluno...');
-
-    // TENTATIVA 1: Botão × (close) — procurar em vários contextos
-    const closeSelectors = [
-      '.modal.in .close',
-      '.modal.show .close',
-      '.modal .close',
-      '[role="dialog"] .close',
-      '.ui-dialog .ui-dialog-titlebar-close',
-      'button.close',
-      '.btn-close',
-      'button[aria-label="Close"]',
-      'button[aria-label="Fechar"]',
-      '[data-dismiss="modal"]',
-      '[data-bs-dismiss="modal"]',
-    ];
-    for (const sel of closeSelectors) {
-      const btn = document.querySelector(sel);
-      if (btn && btn.offsetParent !== null) {
-        sendLog(`Fechando via ${sel}`);
-        btn.click();
-        await sleep(1500);
-        await waitForModalClose();
-        return;
-      }
-    }
-
-    // TENTATIVA 2: Botão "Voltar"
-    const allBtns = document.querySelectorAll('a, button, input[type="button"]');
-    for (const btn of allBtns) {
-      const txt = btn.textContent?.trim() || btn.value || '';
-      if (txt === 'Voltar' || txt === 'Fechar' || txt === 'Cancelar') {
-        if (btn.offsetParent !== null) {
-          sendLog(`Fechando via botão "${txt}"`);
-          btn.click();
-          await sleep(1500);
-          await waitForModalClose();
-          return;
-        }
-      }
-    }
-
-    // TENTATIVA 3: Clicar no backdrop
-    const backdrop = document.querySelector('.modal-backdrop, .ui-widget-overlay');
-    if (backdrop) {
-      sendLog('Fechando via backdrop');
-      backdrop.click();
-      await sleep(1000);
-    }
-
-    // TENTATIVA 4: Tecla Escape
-    sendLog('Fechando via tecla Escape');
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
-    document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', keyCode: 27, bubbles: true }));
-    await sleep(1500);
-
-    // TENTATIVA 5: Forçar fechar modals Bootstrap via jQuery se disponível
-    try {
-      if (window.jQuery || window.$) {
-        const jq = window.jQuery || window.$;
-        jq('.modal').modal('hide');
-        sendLog('Fechando via jQuery .modal("hide")');
-        await sleep(1000);
-      }
-    } catch (e) { /* jQuery não disponível */ }
   }
 
   // ========================
@@ -706,7 +652,6 @@
   }
 
   function getTotalRegistros() {
-    // Texto "Registros 1 a 10 de 42"
     const infos = document.querySelectorAll('.dataTables_info, [class*="info"], [id*="info"]');
     for (const info of infos) {
       const match = info.textContent.match(/de\s+(\d+)/i);
@@ -718,13 +663,6 @@
   // ========================
   // PROCESSO PRINCIPAL
   // ========================
-  // Fluxo por aluno:
-  //   1. Clicar na lupa (Visualizar)
-  //   2. Esperar ficha abrir
-  //   3. Extrair Dados Pessoais + Documentos + Deficiência + Endereço
-  //   4. Clicar aba Telefones → extrair
-  //   5. Fechar ficha
-  //   6. Próximo aluno
 
   async function iniciarExtracao(serieAno, delayMs) {
     if (running) return;
@@ -733,6 +671,7 @@
 
     const totalRegistros = getTotalRegistros();
     sendLog(`===== INICIANDO EXTRAÇÃO =====`);
+    sendLog(`Turma: ${serieAno}`);
     sendLog(`Total de registros estimado: ${totalRegistros || '?'}`);
     sendLog(`Delay entre alunos: ${delayMs}ms`);
 
@@ -744,6 +683,16 @@
     while (!shouldStop) {
       sendLog(`--- Página ${paginaAtual} ---`);
       await sleep(1000);
+
+      // Verificar que estamos na lista de alunos
+      if (!tabelaEstaVisivel()) {
+        sendLog('Tabela de alunos não visível. Esperando...', 'warn');
+        await esperarTabelaVoltar(10000);
+        if (!tabelaEstaVisivel()) {
+          sendLog('Tabela não apareceu. Abortando.', 'error');
+          break;
+        }
+      }
 
       const alunosDaPagina = coletarDadosTabela();
       if (alunosDaPagina.length === 0) {
@@ -770,46 +719,59 @@
             continue;
           }
 
-          // PASSO 1: Clicar na lupa
-          sendLog(`  Clicando na lupa...`);
+          // PASSO 1: Guardar referência — depois de clicar, a tabela pode sumir
+          const nomeAluno = aluno.nome;
+
+          // PASSO 2: Clicar na lupa
+          sendLog(`  Clicando na lupa de ${nomeAluno}...`);
           aluno.btnVisualizar.click();
-          await sleep(delayMs);
 
-          // PASSO 2: Esperar ficha abrir
+          // PASSO 3: Esperar ficha abrir (detectar mudança de conteúdo)
           sendLog(`  Esperando ficha abrir...`);
-          const container = await waitForModal(15000);
+          await sleep(delayMs); // Dar tempo do servidor responder
+          const fichaAbriu = await esperarFichaAbrir(20000);
 
-          if (!container || container === document) {
-            sendLog(`  ⚠ Ficha pode não ter aberto para ${aluno.nome}. Tentando extrair mesmo assim...`, 'warn');
-          } else {
-            sendLog(`  ✓ Ficha detectada!`);
+          if (!fichaAbriu) {
+            // Mesmo se não detectamos o texto esperado, tentar extrair o que tiver na tela
+            sendLog(`  ⚠ Texto da ficha não detectado, mas vamos tentar extrair...`, 'warn');
           }
 
-          // PASSO 3: Extrair Dados Pessoais + Documentos + Deficiência + Endereço
-          sendLog(`  Extraindo dados...`);
-          const dados = await extrairDadosPessoais(container);
+          // PASSO 4: Extrair Dados Pessoais + Documentos + Deficiência + Endereço
+          sendLog(`  Extraindo dados de ${nomeAluno}...`);
+          const dados = await extrairDadosFicha();
 
-          // PASSO 4: Extrair Telefones
-          sendLog(`  Extraindo telefones...`);
-          const telefonesStr = await extrairTelefones(container);
+          // PASSO 5: Extrair Telefones
+          const telefonesStr = await extrairTelefones();
 
           // Montar linha CSV
           const row = montarLinhaCSV(serieAno, numeroGlobal, aluno, dados, telefonesStr);
           todosAlunos.push(row);
 
-          sendLog(`  ✓ ${aluno.nome} - OK`);
+          const camposPreenchidos = Object.values(dados).filter(v => v && v !== 'Não' && v !== '0').length;
+          sendLog(`  ✓ ${nomeAluno} - OK (${camposPreenchidos} campos extraídos)`);
 
-          // PASSO 5: Fechar ficha
-          await fecharModal();
-          await sleep(800);
+          // PASSO 6: Voltar para lista de alunos
+          const voltou = await voltarParaLista();
+          if (!voltou) {
+            sendLog(`  ⚠ Problema ao voltar para lista após ${nomeAluno}`, 'warn');
+            // Esperar mais um pouco
+            await sleep(3000);
+            if (!tabelaEstaVisivel()) {
+              sendLog('  Recarregando a página...', 'warn');
+              location.reload();
+              await sleep(5000);
+            }
+          }
+
+          await sleep(800); // Pausa entre alunos
 
         } catch (err) {
           erros++;
           sendError(`${aluno.nome}: ${err.message}`);
           sendLog(`  ✗ Erro: ${aluno.nome}: ${err.message}`, 'error');
-          // Tentar fechar qualquer coisa que esteja aberta
-          try { await fecharModal(); } catch (e) { /* ignore */ }
-          await sleep(1000);
+          // Tentar voltar para a lista
+          try { await voltarParaLista(); } catch (e) {}
+          await sleep(2000);
         }
 
         // Salvar progresso parcial
@@ -817,13 +779,15 @@
       }
 
       // Próxima página
+      if (shouldStop) break;
       const btnProxima = getProximaPagina();
-      if (btnProxima && !shouldStop) {
+      if (btnProxima) {
         sendLog(`Avançando para página ${paginaAtual + 1}...`);
         btnProxima.click();
         paginaAtual++;
-        await sleep(2500);
+        await sleep(3000);
       } else {
+        sendLog('Última página alcançada.');
         break;
       }
     }
@@ -854,41 +818,76 @@
   });
 
   // ========================
-  // DEBUG: Expor função para testar no Console do DevTools
+  // DEBUG (Console do DevTools)
   // ========================
-  // No console do Chrome, digite: sedDebug.detectarModal() para testar a detecção
   window.sedDebug = {
-    detectarModal: () => {
-      const m = encontrarModalAberto();
-      if (m) {
-        console.log('Modal encontrado:', m);
-        console.log('TagName:', m.tagName, 'Classes:', m.className, 'ID:', m.id);
-        console.log('Texto (primeiros 200 chars):', m.innerText?.substring(0, 200));
-      } else {
-        console.log('Nenhum modal detectado.');
-      }
-      return m;
+    // Teste 1: Verifica se a ficha está aberta
+    fichaAberta: () => {
+      const aberta = fichaEstaAberta();
+      console.log('Ficha está aberta?', aberta);
+      return aberta;
     },
-    coletarTabela: coletarDadosTabela,
+    // Teste 2: Verifica se a tabela está visível
+    tabelaVisivel: () => {
+      const visivel = tabelaEstaVisivel();
+      console.log('Tabela está visível?', visivel);
+      return visivel;
+    },
+    // Teste 3: Coleta a tabela
+    coletarTabela: () => {
+      const alunos = coletarDadosTabela();
+      console.log(`Encontrados ${alunos.length} alunos:`, alunos.map(a => a.nome));
+      return alunos;
+    },
+    // Teste 4: Testa clicar na lupa do primeiro aluno
     testarLupa: async () => {
       const alunos = coletarDadosTabela();
-      if (alunos.length > 0) {
-        console.log(`Encontrados ${alunos.length} alunos. Testando o primeiro...`);
-        const btn = alunos[0].btnVisualizar;
-        if (btn) {
-          console.log('Botão visualizar:', btn.tagName, btn.className, btn.href || btn.onclick);
-          btn.click();
-          console.log('Clicou! Aguarde 3s e rode: sedDebug.detectarModal()');
-        } else {
-          console.log('Sem botão visualizar na primeira linha');
+      if (alunos.length === 0) { console.log('Nenhum aluno na tabela'); return; }
+      const btn = alunos[0].btnVisualizar;
+      if (!btn) { console.log('Sem botão visualizar'); return; }
+      console.log('Clicando na lupa de:', alunos[0].nome);
+      console.log('Botão:', btn.tagName, btn.className, btn.href || '', btn.outerHTML?.substring(0, 200));
+      btn.click();
+      console.log('Clicou! Aguarde 3-5s e rode: sedDebug.fichaAberta()');
+    },
+    // Teste 5: Extrai dados da ficha aberta
+    extrairDados: async () => {
+      console.log('Extraindo dados da página atual...');
+      const dados = await extrairDadosFicha();
+      console.log('Dados extraídos:', dados);
+      const telefones = await extrairTelefones();
+      console.log('Telefones:', telefones);
+      return { dados, telefones };
+    },
+    // Teste 6: Volta para a lista
+    voltar: async () => {
+      console.log('Tentando voltar para a lista...');
+      const ok = await voltarParaLista();
+      console.log('Voltou?', ok);
+      return ok;
+    },
+    // Teste 7: Mostra o HTML ao redor de texto específico (para debug)
+    encontrarTexto: (texto) => {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const resultados = [];
+      while (walker.nextNode()) {
+        if (walker.currentNode.textContent.includes(texto)) {
+          const el = walker.currentNode.parentElement;
+          resultados.push({
+            texto: walker.currentNode.textContent.trim().substring(0, 100),
+            tag: el.tagName,
+            classes: el.className,
+            id: el.id,
+            html: el.outerHTML?.substring(0, 300)
+          });
         }
-      } else {
-        console.log('Nenhum aluno na tabela');
       }
+      console.log(`Encontradas ${resultados.length} ocorrências de "${texto}":`, resultados);
+      return resultados;
     }
   };
 
-  console.log('[SED Extrator v3] Content script carregado ✓');
-  console.log('[SED Extrator v3] Para debug, use: sedDebug.detectarModal() ou sedDebug.testarLupa()');
+  console.log('[SED Extrator v4] Content script carregado ✓');
+  console.log('[SED Extrator v4] Debug: sedDebug.fichaAberta() | sedDebug.tabelaVisivel() | sedDebug.testarLupa() | sedDebug.coletarTabela()');
 
 })();

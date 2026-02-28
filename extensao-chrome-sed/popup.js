@@ -16,7 +16,7 @@ const infoExtraidos = document.getElementById('infoExtraidos');
 const infoErros = document.getElementById('infoErros');
 const logArea = document.getElementById('logArea');
 
-// Cabeçalho do CSV conforme estrutura do 6A.csv (separador: ;)
+// Cabeçalho do CSV (separador: ;)
 const CSV_HEADER = [
   'série/ano', 'numero_linha', 'nome', 'ra_lista', 'serie', 'uf_lista',
   'data_nasc_lista', 'responsavel_lista', 'cabecalho', 'ra_cabecalho',
