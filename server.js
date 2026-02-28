@@ -27,6 +27,21 @@ const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 // ========================
 // INICIALIZAÇÃO DO BANCO
 // ========================
+
+// Inicializa o banco na primeira requisição (compatível com Vercel serverless)
+let dbInitialized = false;
+app.use(async (req, res, next) => {
+  if (!dbInitialized) {
+    try {
+      await initDB();
+      dbInitialized = true;
+    } catch (err) {
+      console.error('Erro ao inicializar banco:', err);
+      return res.status(500).json({ error: 'Erro ao conectar ao banco de dados' });
+    }
+  }
+  next();
+});
 async function initDB() {
   await db.batch([
     `CREATE TABLE IF NOT EXISTS turmas (
@@ -389,11 +404,18 @@ app.get('/api/exportar/frequencia', async (req, res) => {
 // ========================
 // INICIAR SERVIDOR
 // ========================
-initDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Servidor rodando em http://localhost:${PORT}`);
+
+// Para execução local (npm start)
+if (!process.env.VERCEL) {
+  initDB().then(() => {
+    app.listen(PORT, () => {
+      console.log(`Servidor rodando em http://localhost:${PORT}`);
+    });
+  }).catch(err => {
+    console.error('Erro ao inicializar banco:', err);
+    process.exit(1);
   });
-}).catch(err => {
-  console.error('Erro ao inicializar banco:', err);
-  process.exit(1);
-});
+}
+
+// Exportar para Vercel
+module.exports = app;

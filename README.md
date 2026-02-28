@@ -18,13 +18,13 @@ Sistema de gestão de alunos e controle de frequência escolar com banco de dado
 - **Frontend**: HTML, CSS, JavaScript puro
 - **Upload**: Multer + csv-parse + xlsx
 
-## Como rodar
+## Como rodar localmente
 
 ```bash
 # 1. Instale as dependências
 npm install
 
-# 2. Configure o .env (já incluído)
+# 2. Configure o .env
 # TURSO_DATABASE_URL=libsql://dalmaso-dansfisica85.aws-us-east-2.turso.io
 # TURSO_AUTH_TOKEN=seu_token
 # PORT=3000
@@ -34,6 +34,14 @@ npm start
 ```
 
 O site estará disponível em `http://localhost:3000`
+
+## Deploy na Vercel
+
+1. Conecte o repositório no [vercel.com](https://vercel.com)
+2. Adicione as variáveis de ambiente no painel da Vercel:
+   - `TURSO_DATABASE_URL`
+   - `TURSO_AUTH_TOKEN`
+3. O deploy é automático a cada push na branch `main`
 
 ## Estrutura do Banco
 
