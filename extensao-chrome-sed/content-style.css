@@ -1,0 +1,106 @@
+/* ========================
+   CONTENT-STYLE.CSS
+   Estilos visuais injetados na página do SED 
+   durante a extração de dados
+   ======================== */
+
+/* Overlay de progresso */
+#sed-extrator-overlay {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 999999;
+  background: linear-gradient(135deg, #1e3a5f, #2563eb);
+  color: #fff;
+  padding: 14px 20px;
+  border-radius: 12px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 13px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  max-width: 340px;
+  pointer-events: none;
+  animation: sed-fade-in 0.4s ease;
+}
+
+#sed-extrator-overlay .titulo {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#sed-extrator-overlay .titulo::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: sed-pulse 1.2s infinite;
+}
+
+#sed-extrator-overlay .info {
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+#sed-extrator-overlay .barra-container {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  height: 6px;
+}
+
+#sed-extrator-overlay .barra {
+  height: 100%;
+  background: #22c55e;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+/* Destaque visual no aluno sendo processado */
+.sed-extrator-highlight {
+  outline: 3px solid #2563eb !important;
+  outline-offset: 2px;
+  background-color: rgba(37, 99, 235, 0.08) !important;
+  transition: outline 0.3s ease, background-color 0.3s ease;
+}
+
+/* Indicador de aluno já extraído */
+.sed-extrator-done {
+  position: relative;
+}
+
+.sed-extrator-done::after {
+  content: '✓';
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #22c55e;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+/* Animações */
+@keyframes sed-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sed-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}

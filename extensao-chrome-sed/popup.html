@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 420px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+    .header {
+      background: linear-gradient(135deg, #1e40af, #3b82f6);
+      color: white;
+      padding: 16px 20px;
+      text-align: center;
+    }
+    .header h1 { font-size: 16px; font-weight: 700; }
+    .header p { font-size: 11px; opacity: 0.85; margin-top: 4px; }
+
+    .content { padding: 16px 20px; }
+
+    .status-bar {
+      background: #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-bar.success { background: #dcfce7; color: #166534; }
+    .status-bar.error { background: #fee2e2; color: #991b1b; }
+    .status-bar.working { background: #dbeafe; color: #1e40af; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #94a3b8; flex-shrink: 0;
+    }
+    .status-bar.success .status-dot { background: #16a34a; }
+    .status-bar.error .status-dot { background: #dc2626; }
+    .status-bar.working .status-dot { background: #2563eb; animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      margin-bottom: 4px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus, .form-group select:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .btn-success { background: #16a34a; color: white; }
+    .btn-success:hover { background: #15803d; }
+    .btn-danger { background: #dc2626; color: white; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-secondary { background: #e2e8f0; color: #475569; }
+    .btn-secondary:hover { background: #cbd5e1; }
+
+    .progress-container {
+      margin: 12px 0;
+      display: none;
+    }
+    .progress-bar {
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #2563eb;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+    .progress-text {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+      text-align: center;
+    }
+
+    .dados-info {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .dados-info .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+    }
+    .dados-info .row .label { color: #64748b; }
+    .dados-info .row .value { font-weight: 600; }
+
+    .separator {
+      height: 1px;
+      background: #e2e8f0;
+      margin: 14px 0;
+    }
+
+    .help-text {
+      font-size: 11px;
+      color: #94a3b8;
+      text-align: center;
+      padding: 8px 0;
+    }
+    .help-text a { color: #3b82f6; text-decoration: none; }
+
+    .log-area {
+      background: #1e293b;
+      color: #94a3b8;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: 'Consolas', monospace;
+      font-size: 11px;
+      max-height: 120px;
+      overflow-y: auto;
+      margin-top: 12px;
+      display: none;
+    }
+    .log-area .log-entry { margin-bottom: 2px; }
+    .log-area .log-success { color: #4ade80; }
+    .log-area .log-error { color: #f87171; }
+    .log-area .log-info { color: #60a5fa; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🎓 SED Extrator de Dados</h1>
+    <p>Extraia dados de alunos do SED e exporte como CSV</p>
+  </div>
+
+  <div class="content">
+    <div class="status-bar" id="statusBar">
+      <div class="status-dot"></div>
+      <span id="statusText">Aguardando... Abra a página de Ficha do Aluno no SED.</span>
+    </div>
+
+    <div class="form-group">
+      <label for="serieAno">Série/Ano da turma</label>
+      <input type="text" id="serieAno" placeholder="Ex: 6A, 7B, 9C" value="6A">
+    </div>
+
+    <div class="form-group">
+      <label for="delayMs">Tempo de espera entre alunos (ms)</label>
+      <input type="number" id="delayMs" value="2000" min="500" max="10000" step="100">
+    </div>
+
+    <button class="btn btn-primary" id="btnIniciar">
+      ▶ Iniciar Extração
+    </button>
+
+    <button class="btn btn-danger" id="btnParar" style="display:none;">
+      ⏹ Parar Extração
+    </button>
+
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-text" id="progressText">0 / 0 alunos</div>
+    </div>
+
+    <div class="dados-info" id="dadosInfo" style="display:none;">
+      <div class="row">
+        <span class="label">Alunos extraídos:</span>
+        <span class="value" id="infoExtraidos">0</span>
+      </div>
+      <div class="row">
+        <span class="label">Erros:</span>
+        <span class="value" id="infoErros">0</span>
+      </div>
+    </div>
+
+    <div class="separator"></div>
+
+    <button class="btn btn-success" id="btnBaixarCSV" style="display:none;">
+      📥 Baixar CSV
+    </button>
+
+    <button class="btn btn-secondary" id="btnLimpar">
+      🗑 Limpar Dados Salvos
+    </button>
+
+    <div class="log-area" id="logArea"></div>
+
+    <p class="help-text">
+      Navegue para <a href="https://sed.educacao.sp.gov.br/NCA/FichaAluno/Index#" target="_blank">SED - Ficha do Aluno</a> antes de iniciar.
+    </p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "SED Extrator de Dados",
+  "version": "1.0.0",
+  "description": "Extrai dados de alunos do SED (Secretaria da Educação SP) e exporta como CSV",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://sed.educacao.sp.gov.br/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://sed.educacao.sp.gov.br/*"],
+      "js": ["content.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    }
+  ],
+}
