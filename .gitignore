@@ -1,3 +1,26 @@
+# Node (legado)
 node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Ambiente
 .env
+
+# Banco local
+local.db
+
+# Vercel
+.vercel/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
 uploads/

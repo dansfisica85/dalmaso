@@ -1,39 +1,44 @@
 # Dalmaso - Busca Ativa
 
-Sistema de gestão de alunos e controle de frequência escolar com banco de dados Turso.
+Sistema de gestão de alunos e controle de frequência escolar com dashboard de gráficos interativos e banco de dados Turso.
 
 ## Funcionalidades
 
-- **Turmas**: Cadastro e gerenciamento de turmas
-- **Alunos**: Cadastro, edição e exclusão ilimitada de alunos
-- **Chamada**: Chamada diária por turma com seleção de dia da semana (Presente/Falta)
-- **Relatórios**: Visualização de frequência filtrável por turma, mês e ano
-- **Importar CSV/XLSX**: Upload de arquivos para adicionar turmas inteiras de uma vez
-- **Exportar**: Download de dados em formato CSV
+- **Dashboard**: Painel com 8 gráficos interativos (Plotly.js) — distribuição por turma, sexo, raça/cor, faixa etária, Bolsa Família, indicadores educacionais, frequência ao longo do tempo e frequência por turma
+- **Turmas**: Cadastro e gerenciamento de turmas com cards visuais
+- **Alunos**: Cadastro completo (50+ campos do SED), busca, filtro por turma, visualização detalhada e edição via modal
+- **Frequência**: Chamada diária por turma com checkboxes, seleção de data e marcação em lote
+- **Relatórios**: Frequência mensal (tabela + gráfico de barras) e perfil da turma (gráficos de sexo, raça, indicadores e histograma de idade)
+- **Importar XLSX/CSV**: Upload de planilhas exportadas do SED (74 colunas) com mapeamento automático e upsert por RA
 
 ## Tecnologias
 
-- **Backend**: Node.js + Express
-- **Banco de dados**: Turso (libSQL)
-- **Frontend**: HTML, CSS, JavaScript puro
-- **Upload**: Multer + csv-parse + xlsx
+- **Backend**: Python / Flask (serverless na Vercel)
+- **Banco de dados**: Turso (libSQL) com fallback para SQLite local
+- **Frontend**: Bootstrap 5 + Plotly.js + JavaScript vanilla
+- **Processamento**: Pandas + openpyxl para importação de dados
+- **Extensão Chrome**: Extração automática de dados do SED (em `extensao-chrome-sed/`)
 
 ## Como rodar localmente
 
 ```bash
-# 1. Instale as dependências
-npm install
+# 1. Crie um ambiente virtual (opcional, recomendado)
+python -m venv venv
+venv\Scripts\activate   # Windows
+# source venv/bin/activate  # Linux/Mac
 
-# 2. Configure o .env
+# 2. Instale as dependências
+pip install -r requirements.txt
+
+# 3. Configure o .env
 # TURSO_DATABASE_URL=libsql://dalmaso-dansfisica85.aws-us-east-2.turso.io
 # TURSO_AUTH_TOKEN=seu_token
-# PORT=3000
 
-# 3. Inicie o servidor
-npm start
+# 4. Inicie o servidor
+python api/index.py
 ```
 
-O site estará disponível em `http://localhost:3000`
+O site estará disponível em `http://localhost:5000`
 
 ## Deploy na Vercel
 
@@ -45,22 +50,27 @@ O site estará disponível em `http://localhost:3000`
 
 ## Estrutura do Banco
 
-- **turmas**: id, nome, descricao
-- **alunos**: id, nome, matricula, turma_id, ativo
-- **frequencia**: id, aluno_id, turma_id, data, dia_semana, presente, observacao
+- **turmas**: id, nome, descricao, criado_em
+- **alunos**: id, turma_id, ra, nome_aluno, data_nascimento, sexo, raca_cor, cpf, nis, filiacao1, filiacao2, telefones, email, cep, endereco, numero, complemento, bairro, municipio, uf, escola_origem, bolsa_familia, pcd, situacao, data_matricula, numero_chamada + mais 20 campos do SED + dados_json (campos extras)
+- **frequencia**: id, aluno_id, turma_id, data, dia_semana, presente, observacao (UNIQUE aluno_id+data)
 
-## Formato do CSV para importação
+## Formato do arquivo para importação
 
-O arquivo CSV deve conter ao menos uma coluna com o nome do aluno. Colunas reconhecidas automaticamente:
+O sistema aceita arquivos `.xlsx` e `.csv` exportados do SED. O mapeamento automático reconhece 74 colunas, incluindo:
 
-| Coluna | Alternativas aceitas |
-|--------|---------------------|
-| Nome   | nome, aluno, estudante, name |
-| Matrícula | matricula, registro, ra, codigo |
+| Coluna Excel | Campo no banco |
+|-------------|---------------|
+| Nome do Aluno | nome_aluno |
+| RA | ra |
+| Data de Nascimento | data_nascimento |
+| Sexo | sexo |
+| Raça/Cor | raca_cor |
+| Bolsa Família | bolsa_familia |
+| PcD | pcd |
+| ... | ... (74 colunas mapeadas) |
 
-Exemplo:
-```csv
-nome,matricula
-João da Silva,2026001
-Maria Santos,2026002
-```
+A turma é criada automaticamente com base no nome do arquivo ou na coluna "Turma/Classe".
+
+## Extensão Chrome (SED)
+
+A pasta `extensao-chrome-sed/` contém uma extensão para Google Chrome que extrai dados dos alunos diretamente do sistema SED da Secretaria de Educação de SP. Consulte o [README da extensão](extensao-chrome-sed/README.md) para instruções de instalação e uso.
