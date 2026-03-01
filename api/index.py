@@ -997,6 +997,181 @@ def relatorio_perfil_turma():
 
 
 # ============================================================
+# ASSISTENTE IA (Groq)
+# ============================================================
+
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+GROQ_MODEL = 'openai/gpt-oss-120b'
+GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
+
+SYSTEM_PROMPT = """Você é o Assistente Pedagógico DALMASO, um especialista em gestão escolar.
+Seu papel é:
+1. Analisar dados de frequência escolar e identificar padrões de risco (busca ativa).
+2. Sugerir intervenções pedagógicas para alunos com baixa frequência.
+3. Interpretar gráficos e dados estatísticos sobre turmas e alunos.
+4. Gerar insights sobre o perfil das turmas (sexo, raça, idade, indicadores).
+5. Ajudar com dúvidas sobre o sistema de gestão escolar DALMASO.
+
+Regras:
+- Responda SEMPRE em português brasileiro.
+- Seja objetivo e prático nas recomendações.
+- Quando receber dados de frequência, destaque alunos com <75% de presença como críticos.
+- Use emojis (⚠️ ✅ 📊 🎯) para destacar pontos importantes.
+- Formate respostas com markdown quando apropriado.
+"""
+
+
+@app.route('/api/ia/chat', methods=['POST'])
+def ia_chat():
+    """Endpoint de chat com IA via Groq."""
+    body = request.get_json(force=True)
+    user_msg = body.get('mensagem', '').strip()
+    contexto = body.get('contexto', '')
+    historico = body.get('historico', [])
+
+    if not user_msg:
+        return jsonify({'erro': 'Mensagem é obrigatória'}), 400
+
+    if not GROQ_API_KEY:
+        return jsonify({'erro': 'GROQ_API_KEY não configurada'}), 500
+
+    messages = [{'role': 'system', 'content': SYSTEM_PROMPT}]
+
+    if contexto:
+        messages.append({'role': 'system', 'content': f'Dados de contexto do sistema:\n{contexto}'})
+
+    for msg in historico[-10:]:
+        messages.append({'role': msg.get('role', 'user'), 'content': msg.get('content', '')})
+
+    messages.append({'role': 'user', 'content': user_msg})
+
+    try:
+        resp = httpx.post(
+            GROQ_URL,
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {GROQ_API_KEY}',
+            },
+            json={
+                'model': GROQ_MODEL,
+                'messages': messages,
+                'temperature': 0.7,
+                'max_completion_tokens': 2048,
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        resposta = data['choices'][0]['message']['content']
+        return jsonify({'resposta': resposta})
+    except httpx.HTTPStatusError as e:
+        return jsonify({'erro': f'Erro Groq: {e.response.status_code}'}), 502
+    except Exception as e:
+        return jsonify({'erro': f'Erro ao consultar IA: {str(e)}'}), 500
+
+
+@app.route('/api/ia/analisar-frequencia', methods=['POST'])
+def ia_analisar_frequencia():
+    """Analisa frequência de uma turma e retorna insights da IA."""
+    body = request.get_json(force=True)
+    turma_id = body.get('turma_id')
+    mes = body.get('mes')
+
+    if not turma_id:
+        return jsonify({'erro': 'turma_id é obrigatório'}), 400
+
+    if not GROQ_API_KEY:
+        return jsonify({'erro': 'GROQ_API_KEY não configurada'}), 500
+
+    try:
+        turma_info = query("SELECT nome FROM turmas WHERE id = ?", [int(turma_id)])
+        turma_nome = turma_info[0]['nome'] if turma_info else 'Desconhecida'
+
+        if mes:
+            freq_data = query("""
+                SELECT a.nome, a.ra,
+                       COUNT(f.id) as total_dias,
+                       SUM(CASE WHEN f.presente = 1 THEN 1 ELSE 0 END) as presencas
+                FROM alunos a
+                LEFT JOIN frequencia f ON a.id = f.aluno_id AND f.data LIKE ?
+                WHERE a.turma_id = ? AND a.ativo = 1
+                GROUP BY a.id, a.nome, a.ra
+                ORDER BY a.nome
+            """, [f"{mes}%", int(turma_id)])
+        else:
+            freq_data = query("""
+                SELECT a.nome, a.ra,
+                       COUNT(f.id) as total_dias,
+                       SUM(CASE WHEN f.presente = 1 THEN 1 ELSE 0 END) as presencas
+                FROM alunos a
+                LEFT JOIN frequencia f ON a.id = f.aluno_id
+                WHERE a.turma_id = ? AND a.ativo = 1
+                GROUP BY a.id, a.nome, a.ra
+                ORDER BY a.nome
+            """, [int(turma_id)])
+
+        linhas = [f"Turma: {turma_nome}"]
+        if mes:
+            linhas.append(f"Período: {mes}")
+        linhas.append(f"Total de alunos: {len(freq_data)}")
+        linhas.append("")
+        linhas.append("Nome | RA | Dias | Presenças | Faltas | %")
+        linhas.append("---|---|---|---|---|---")
+
+        criticos = []
+        for al in freq_data:
+            total = al['total_dias'] or 0
+            pres = al['presencas'] or 0
+            faltas = total - pres
+            perc = round(pres / total * 100, 1) if total > 0 else 0
+            linhas.append(f"{al['nome']} | {al['ra'] or '-'} | {total} | {pres} | {faltas} | {perc}%")
+            if perc < 75 and total > 0:
+                criticos.append(f"{al['nome']} ({perc}%)")
+
+        contexto = '\n'.join(linhas)
+        prompt = f"""Analise os dados de frequência da turma abaixo e forneça:
+1. Resumo geral da turma
+2. Alunos em situação crítica (<75% de frequência) — destaque com ⚠️
+3. Padrões observados
+4. Recomendações de intervenção pedagógica
+5. Sugestão de busca ativa para alunos críticos
+
+Dados:\n{contexto}"""
+
+        messages = [
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user', 'content': prompt},
+        ]
+
+        resp = httpx.post(
+            GROQ_URL,
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {GROQ_API_KEY}',
+            },
+            json={
+                'model': GROQ_MODEL,
+                'messages': messages,
+                'temperature': 0.7,
+                'max_completion_tokens': 3000,
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        analise = data['choices'][0]['message']['content']
+
+        return jsonify({
+            'analise': analise,
+            'criticos': criticos,
+            'total_alunos': len(freq_data),
+            'turma': turma_nome,
+        })
+    except Exception as e:
+        return jsonify({'erro': f'Erro: {str(e)}'}), 500
+
+
+# ============================================================
 # ROTA DE SAÚDE
 # ============================================================
 
