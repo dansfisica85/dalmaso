@@ -18,10 +18,14 @@ from flask_cors import CORS
 # ── Banco de Dados ──────────────────────────────────────────
 try:
     import libsql_experimental as libsql
-    USE_TURSO = True
+    # Só usa Turso se as credenciais estiverem configuradas
+    USE_TURSO = bool(os.environ.get("TURSO_DATABASE_URL", "").strip())
 except ImportError:
     import sqlite3
     USE_TURSO = False
+
+if not USE_TURSO:
+    import sqlite3
 
 import pandas as pd
 
