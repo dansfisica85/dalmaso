@@ -9,6 +9,23 @@ let turmaAtual = null;
 let anoCalendario = new Date().getFullYear();
 let freqCalendario = {};
 let dataChamadaAtual = '';
+let nivelAcesso = null; // 'admin' | 'frequencia'
+let monitorInterval = null;
+let monitorPeriodoAtual = 'diario';
+let monitorAnimating = false;
+
+// ── Configuração de períodos e níveis ───────────────────────
+const PERIODOS_CONFIG = {
+  manha: ['1A','1B','1C','1D','1E','1F','2A','2B','2C','2D','2E','3A','3B','3C'],
+  tarde: ['6A','6B','6C','7A','7B','7C','8A','8B','8C','8D','9A','9B','9C','9D'],
+  noite: ['1G','2F','2G','3D','3E'],
+};
+
+const NIVEIS_CONFIG = {
+  ensino_medio: ['1A','1B','1C','1D','1E','1F','2B','2C','2D','2E','3B','3C','1G','2F','2G','3D','3E'],
+  ensino_medio_iftp: ['2A','3A'],
+  fundamental_final: ['6A','6B','6C','7A','7B','7C','8A','8B','8C','8D','9A','9B','9C','9D'],
+};
 
 // ── Utilidades ──────────────────────────────────────────────
 function hoje() {
@@ -18,6 +35,10 @@ function hoje() {
 function mesAtual() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function agora() {
+  return new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
 function toast(msg, type = 'success') {
@@ -57,6 +78,162 @@ async function apiUpload(endpoint, formData) {
   return data;
 }
 
+// Animated counter
+function animateCounter(el, target, suffix = '') {
+  const start = parseInt(el.textContent) || 0;
+  const diff = target - start;
+  if (diff === 0) { el.textContent = target + suffix; return; }
+  const duration = 800;
+  const startTime = performance.now();
+  function step(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+    const current = Math.round(start + diff * eased);
+    el.textContent = current + suffix;
+    if (progress < 1) requestAnimationFrame(step);
+    else {
+      el.textContent = target + suffix;
+      el.classList.add('value-updated');
+      setTimeout(() => el.classList.remove('value-updated'), 600);
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+function freqColorClass(perc) {
+  if (perc >= 90) return 'freq-otima';
+  if (perc >= 80) return 'freq-boa';
+  if (perc >= 70) return 'freq-media';
+  if (perc >= 60) return 'freq-baixa';
+  return 'freq-critica';
+}
+
+function freqColor(perc) {
+  if (perc >= 90) return '#16a34a';
+  if (perc >= 80) return '#65a30d';
+  if (perc >= 70) return '#ca8a04';
+  if (perc >= 60) return '#ea580c';
+  return '#dc2626';
+}
+
+function periodoLabel(p) {
+  return { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }[p] || p;
+}
+function nivelLabel(n) {
+  return {
+    ensino_medio: 'Ensino Médio',
+    ensino_medio_iftp: 'EM IFTP',
+    fundamental_final: 'Fund. Final',
+  }[n] || n;
+}
+
+// ============================================================
+// AUTENTICAÇÃO — Login Dual
+// ============================================================
+function initLogin() {
+  const loginScreen = document.getElementById('login-screen');
+  const wrapper = document.getElementById('wrapper');
+  const loginForm = document.getElementById('login-form');
+  const loginSenha = document.getElementById('login-senha');
+  const toggleSenha = document.getElementById('toggle-senha');
+  const loginErro = document.getElementById('login-erro');
+  const loginErroMsg = document.getElementById('login-erro-msg');
+
+  // Verificar sessão existente
+  const savedNivel = sessionStorage.getItem('dalmaso_nivel');
+  if (savedNivel) {
+    nivelAcesso = savedNivel;
+    loginScreen.style.display = 'none';
+    wrapper.style.display = '' ;
+    wrapper.style.cssText = '';
+    aplicarNivelAcesso();
+    onLoginSuccess();
+    return;
+  }
+
+  // Toggle visibilidade da senha
+  if (toggleSenha) {
+    toggleSenha.addEventListener('click', () => {
+      const isPass = loginSenha.type === 'password';
+      loginSenha.type = isPass ? 'text' : 'password';
+      toggleSenha.querySelector('i').className = isPass ? 'bi bi-eye-slash' : 'bi bi-eye';
+    });
+  }
+
+  // Submit login
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const senha = loginSenha.value.trim();
+      if (!senha) return;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ senha }),
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+          nivelAcesso = data.nivel;
+          sessionStorage.setItem('dalmaso_nivel', nivelAcesso);
+
+          loginScreen.style.display = 'none';
+          wrapper.style.display = '';
+          wrapper.style.cssText = '';
+          aplicarNivelAcesso();
+          onLoginSuccess();
+          toast(data.mensagem, 'success');
+        } else {
+          loginErroMsg.textContent = data.erro || 'Senha incorreta';
+          loginErro.style.display = 'block';
+          loginSenha.value = '';
+          loginSenha.focus();
+          // Shake animation
+          loginForm.style.animation = 'none';
+          loginForm.offsetHeight; // reflow
+          loginForm.style.animation = 'loginShake .4s ease';
+        }
+      } catch (err) {
+        loginErroMsg.textContent = 'Erro de conexão';
+        loginErro.style.display = 'block';
+      }
+    });
+  }
+}
+
+function aplicarNivelAcesso() {
+  const labelNivel = document.getElementById('label-nivel-acesso');
+  if (labelNivel) {
+    labelNivel.textContent = nivelAcesso === 'admin' ? 'Admin' : 'Frequência';
+  }
+
+  // Esconder itens que requerem admin
+  document.querySelectorAll('[data-require="admin"]').forEach(el => {
+    el.style.display = nivelAcesso === 'admin' ? '' : 'none';
+  });
+}
+
+function onLoginSuccess() {
+  // Ambos os níveis veem o monitoramento e podem registrar frequência
+  navigateTo('monitoramento');
+  initMonitor();
+}
+
+// Logout
+document.getElementById('btn-logout')?.addEventListener('click', () => {
+  sessionStorage.removeItem('dalmaso_nivel');
+  nivelAcesso = null;
+  if (monitorInterval) clearInterval(monitorInterval);
+  document.getElementById('login-screen').style.display = '';
+  document.getElementById('wrapper').style.display = 'none';
+  document.getElementById('wrapper').style.cssText = 'display:none !important;';
+  document.getElementById('login-senha').value = '';
+  document.getElementById('login-erro').style.display = 'none';
+});
+
 // ============================================================
 // NAVEGAÇÃO
 // ============================================================
@@ -66,16 +243,23 @@ const sidebar = document.getElementById('sidebar');
 const btnToggle = document.getElementById('btnToggleSidebar');
 
 function navigateTo(pageId) {
+  // Verificar acesso
+  const navItem = document.querySelector(`.sidebar-nav li[data-page="${pageId}"]`);
+  if (navItem && navItem.dataset.require === 'admin' && nivelAcesso !== 'admin') {
+    toast('Sem permissão para acessar esta página', 'error');
+    return;
+  }
+
   sidebarNav.forEach(li => li.classList.remove('active'));
   allPages.forEach(p => p.classList.remove('active'));
-  const navLi = document.querySelector(`.sidebar-nav li[data-page="${pageId}"]`);
-  if (navLi) navLi.classList.add('active');
+  if (navItem) navItem.classList.add('active');
   const pageEl = document.getElementById(`page-${pageId}`);
   if (pageEl) pageEl.classList.add('active');
   sidebar.classList.remove('show');
 
   // Carregar dados da página
   switch (pageId) {
+    case 'monitoramento': loadMonitorData(); break;
     case 'inicio': loadInicio(); break;
     case 'alunos': loadAlunos(); break;
     case 'relatorios': initRelatorios(); break;
@@ -90,6 +274,440 @@ sidebarNav.forEach(li => {
 
 if (btnToggle) {
   btnToggle.addEventListener('click', () => sidebar.classList.toggle('show'));
+}
+
+// ============================================================
+// PAINEL DE MONITORAMENTO — 24h
+// ============================================================
+
+function initMonitor() {
+  // Data de referência padrão = hoje
+  const dataRef = document.getElementById('filtro-data-ref');
+  if (dataRef && !dataRef.value) dataRef.value = hoje();
+
+  // Tabs de período
+  document.querySelectorAll('.monitor-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.monitor-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      monitorPeriodoAtual = tab.dataset.periodo;
+      loadMonitorData();
+    });
+  });
+
+  // Filtros de turno/nível/data
+  document.getElementById('filtro-turno')?.addEventListener('change', loadMonitorData);
+  document.getElementById('filtro-nivel')?.addEventListener('change', loadMonitorData);
+  document.getElementById('filtro-data-ref')?.addEventListener('change', loadMonitorData);
+
+  // Botão atualizar
+  document.getElementById('btn-atualizar-monitor')?.addEventListener('click', () => {
+    const btn = document.getElementById('btn-atualizar-monitor');
+    btn.querySelector('i').classList.add('spin');
+    loadMonitorData().finally(() => {
+      setTimeout(() => btn.querySelector('i').classList.remove('spin'), 500);
+    });
+  });
+
+  // View toggle (table/grid)
+  document.querySelectorAll('.monitor-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.monitor-view-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const view = btn.dataset.view;
+      document.getElementById('monitor-view-table').style.display = view === 'table' ? '' : 'none';
+      document.getElementById('monitor-view-grid').style.display = view === 'grid' ? '' : 'none';
+    });
+  });
+
+  // Auto-refresh a cada 30 segundos (monitor 24h)
+  if (monitorInterval) clearInterval(monitorInterval);
+  monitorInterval = setInterval(() => {
+    const monPage = document.getElementById('page-monitoramento');
+    if (monPage && monPage.classList.contains('active')) {
+      loadMonitorData(true); // silent refresh
+    }
+  }, 30000);
+
+  // Primeira carga
+  loadMonitorData();
+}
+
+async function loadMonitorData(silent = false) {
+  const turno = document.getElementById('filtro-turno')?.value || 'todos';
+  const nivel = document.getElementById('filtro-nivel')?.value || 'todos';
+  const dataRef = document.getElementById('filtro-data-ref')?.value || '';
+
+  const params = new URLSearchParams({
+    periodo: monitorPeriodoAtual,
+    turno,
+    nivel,
+    data_ref: dataRef,
+  });
+
+  try {
+    const data = await fetch(`/api/monitoramento?${params}`).then(r => r.json());
+    if (data.erro) {
+      if (!silent) toast(data.erro, 'error');
+      return;
+    }
+
+    renderMonitorCards(data.resumo, data.alunos_criticos?.length || 0);
+    renderMonitorPeriodos(data.freq_por_periodo);
+    renderMonitorTurmasTable(data.turmas);
+    renderMonitorTurmasGrid(data.turmas);
+    renderMonitorCriticos(data.alunos_criticos || []);
+    renderMonitorCharts(data);
+
+    // Atualizar subtítulo e hora
+    const subtitulo = document.getElementById('monitor-subtitulo');
+    if (subtitulo) {
+      const labels = {
+        diario: 'Diário',
+        semanal: 'Semanal',
+        mensal: 'Mensal',
+        bimestral: 'Bimestral',
+        anual: 'Anual',
+      };
+      subtitulo.textContent = `${labels[monitorPeriodoAtual]} — ${data.data_inicio} a ${data.data_fim}`;
+    }
+    const ultimaAtt = document.getElementById('monitor-ultima-atualizacao');
+    if (ultimaAtt) ultimaAtt.textContent = `Atualizado: ${agora()}`;
+
+  } catch (err) {
+    if (!silent) console.error('Monitor error:', err);
+  }
+}
+
+function renderMonitorCards(resumo, criticos) {
+  animateCounter(document.getElementById('mc-turmas'), resumo.total_turmas);
+  animateCounter(document.getElementById('mc-alunos'), resumo.total_alunos);
+  animateCounter(document.getElementById('mc-frequencia'), resumo.media_frequencia, '%');
+  animateCounter(document.getElementById('mc-criticos'), criticos);
+}
+
+function renderMonitorPeriodos(freqPeriodo) {
+  ['manha', 'tarde', 'noite'].forEach(p => {
+    const data = freqPeriodo?.[p] || {};
+    const perc = data.percentual || 0;
+    const turmas = data.total_turmas || 0;
+
+    const percEl = document.getElementById(`mp-${p}-perc`);
+    const turmasEl = document.getElementById(`mp-${p}-turmas`);
+    const barEl = document.getElementById(`mp-${p}-bar`);
+
+    if (percEl) animateCounter(percEl, perc, '%');
+    if (turmasEl) turmasEl.textContent = `${turmas} turmas`;
+    if (barEl) setTimeout(() => { barEl.style.width = perc + '%'; }, 100);
+  });
+}
+
+function renderMonitorTurmasTable(turmas) {
+  const tbody = document.getElementById('corpo-tabela-monitor');
+  if (!tbody) return;
+
+  if (!turmas || !turmas.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Nenhum dado de frequência encontrado para o período selecionado.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = turmas.map(t => {
+    const colorCls = freqColorClass(t.percentual);
+    const color = freqColor(t.percentual);
+    return `<tr>
+      <td><strong>${t.nome}</strong></td>
+      <td><span class="badge bg-${t.periodo === 'manha' ? 'warning' : t.periodo === 'tarde' ? 'info' : 'dark'} text-${t.periodo === 'manha' ? 'dark' : 'white'}">${periodoLabel(t.periodo)}</span></td>
+      <td><small>${nivelLabel(t.nivel)}</small></td>
+      <td class="text-center">${t.total_alunos}</td>
+      <td class="text-center"><span class="badge bg-success">${t.presencas}</span></td>
+      <td class="text-center"><span class="badge bg-danger">${t.faltas}</span></td>
+      <td class="text-center">${t.dias_registrados}</td>
+      <td>
+        <div class="d-flex align-items-center gap-2">
+          <div class="monitor-freq-bar">
+            <div class="monitor-freq-fill" style="width:${t.percentual}%;background:${color};"></div>
+          </div>
+          <strong class="${colorCls}" style="min-width:45px;">${t.percentual}%</strong>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderMonitorTurmasGrid(turmas) {
+  const grid = document.getElementById('monitor-view-grid');
+  if (!grid) return;
+
+  if (!turmas || !turmas.length) {
+    grid.innerHTML = '<div class="col-12 text-center text-muted py-4">Sem dados.</div>';
+    return;
+  }
+
+  grid.innerHTML = turmas.map(t => {
+    const colorCls = freqColorClass(t.percentual);
+    const color = freqColor(t.percentual);
+    const periodoBg = t.periodo === 'manha' ? 'warning' : t.periodo === 'tarde' ? 'info' : 'dark';
+    return `<div class="col-6 col-md-3 col-lg-2">
+      <div class="monitor-turma-mini">
+        <div class="nome">${t.nome}</div>
+        <span class="badge bg-${periodoBg} badge-periodo text-${t.periodo === 'manha' ? 'dark' : 'white'} mb-1">${periodoLabel(t.periodo)}</span>
+        <div class="perc ${colorCls}">${t.percentual}%</div>
+        <div class="monitor-progress mt-1">
+          <div class="monitor-progress-bar" style="width:${t.percentual}%;background:${color};"></div>
+        </div>
+        <small class="text-muted">${t.total_alunos} alunos</small>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderMonitorCriticos(criticos) {
+  const tbody = document.getElementById('corpo-tabela-criticos');
+  const semCrit = document.getElementById('monitor-sem-criticos');
+  if (!tbody) return;
+
+  if (!criticos.length) {
+    tbody.innerHTML = '';
+    if (semCrit) semCrit.style.display = '';
+    return;
+  }
+  if (semCrit) semCrit.style.display = 'none';
+
+  tbody.innerHTML = criticos.map(c => {
+    const color = freqColor(c.percentual);
+    return `<tr>
+      <td><strong>${c.nome}</strong></td>
+      <td>${c.ra || '-'}</td>
+      <td><span class="badge bg-primary">${c.turma}</span></td>
+      <td class="text-center"><span class="badge bg-success">${c.presencas}</span></td>
+      <td class="text-center"><span class="badge bg-danger">${c.faltas}</span></td>
+      <td class="text-center">${c.total_dias}</td>
+      <td>
+        <div class="d-flex align-items-center gap-2">
+          <div class="monitor-freq-bar">
+            <div class="monitor-freq-fill" style="width:${c.percentual}%;background:${color};"></div>
+          </div>
+          <strong style="color:${color};min-width:45px;">${c.percentual}%</strong>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// GRÁFICOS DO MONITOR — Com Animações
+// ============================================================
+function renderMonitorCharts(data) {
+  const plotCfg = { responsive: true, displayModeBar: false };
+
+  // 1. Gráfico de barras por turma (animated histogram style)
+  renderChartTurmas(data.turmas, plotCfg);
+
+  // 2. Gráfico de pizza (presença vs ausência)
+  renderChartPizza(data.resumo, plotCfg);
+
+  // 3. Gráfico temporal (animated line plot / oscilloscope style)
+  renderChartTemporal(data.freq_diaria || [], plotCfg);
+}
+
+function renderChartTurmas(turmas, plotCfg) {
+  const el = document.getElementById('chart-monitor-turmas');
+  if (!el || !turmas?.length) return;
+
+  const nomes = turmas.map(t => t.nome);
+  const percentuais = turmas.map(t => t.percentual);
+  const cores = turmas.map(t => freqColor(t.percentual));
+
+  // Animated bar chart (como animated_histogram do matplotlib)
+  Plotly.newPlot(el, [{
+    x: nomes,
+    y: percentuais,
+    type: 'bar',
+    marker: {
+      color: cores,
+      line: { color: cores.map(c => c), width: 1 },
+    },
+    text: percentuais.map(p => p + '%'),
+    textposition: 'outside',
+    textfont: { size: 10 },
+    hovertemplate: '<b>%{x}</b><br>Frequência: %{y}%<extra></extra>',
+  }], {
+    title: { text: '', font: { size: 14 } },
+    yaxis: {
+      range: [0, 105],
+      title: { text: 'Frequência (%)' },
+      gridcolor: '#f1f5f9',
+    },
+    xaxis: {
+      tickangle: -45,
+      tickfont: { size: 10 },
+    },
+    margin: { t: 20, b: 80, l: 50, r: 20 },
+    height: 320,
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    shapes: [{
+      type: 'line',
+      x0: -0.5, x1: nomes.length - 0.5,
+      y0: 75, y1: 75,
+      line: { color: '#ef4444', width: 2, dash: 'dash' },
+    }],
+    annotations: [{
+      x: nomes.length - 1,
+      y: 75,
+      text: 'Mínimo 75%',
+      showarrow: false,
+      font: { color: '#ef4444', size: 10 },
+      yshift: 12,
+    }],
+  }, plotCfg);
+
+  // Animate bars growing (similar to matplotlib barGrow)
+  animatePlotlyBars(el, percentuais);
+}
+
+function animatePlotlyBars(el, targetValues) {
+  // Start with zero heights and animate to target
+  Plotly.animate(el, {
+    data: [{ y: targetValues }],
+  }, {
+    transition: { duration: 1200, easing: 'cubic-in-out' },
+    frame: { duration: 1200 },
+  }).catch(() => {}); // ignore if element removed
+}
+
+function renderChartPizza(resumo, plotCfg) {
+  const el = document.getElementById('chart-monitor-pizza');
+  if (!el) return;
+
+  const presencas = resumo.total_presencas || 0;
+  const faltas = resumo.total_faltas || 0;
+
+  if (presencas === 0 && faltas === 0) {
+    el.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-pie-chart" style="font-size:2rem;"></i><p class="mt-2">Sem dados no período</p></div>';
+    return;
+  }
+
+  Plotly.newPlot(el, [{
+    labels: ['Presenças', 'Faltas'],
+    values: [presencas, faltas],
+    type: 'pie',
+    hole: 0.55,
+    marker: {
+      colors: ['#22c55e', '#ef4444'],
+      line: { color: '#fff', width: 2 },
+    },
+    textinfo: 'percent+label',
+    textfont: { size: 12 },
+    hovertemplate: '<b>%{label}</b><br>%{value} registros<br>%{percent}<extra></extra>',
+    pull: [0.02, 0.05],
+    rotation: 90,
+  }], {
+    margin: { t: 10, b: 10, l: 10, r: 10 },
+    height: 320,
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    showlegend: true,
+    legend: { orientation: 'h', y: -0.1 },
+    annotations: [{
+      text: `<b>${resumo.media_frequencia}%</b>`,
+      showarrow: false,
+      font: { size: 22, color: '#1e293b' },
+    }],
+  }, plotCfg);
+}
+
+function renderChartTemporal(freqDiaria, plotCfg) {
+  const el = document.getElementById('chart-monitor-temporal');
+  if (!el) return;
+
+  if (!freqDiaria?.length) {
+    el.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-graph-up" style="font-size:2rem;"></i><p class="mt-2">Sem dados temporais para o período</p></div>';
+    return;
+  }
+
+  const datas = freqDiaria.map(f => f.data);
+  const percentuais = freqDiaria.map(f => f.percentual);
+  const totais = freqDiaria.map(f => f.total);
+
+  // Animated line plot (like simple_anim / oscilloscope from matplotlib)
+  const traces = [
+    {
+      x: datas,
+      y: percentuais,
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: 'Frequência %',
+      line: {
+        color: '#6366f1',
+        width: 3,
+        shape: 'spline',
+        smoothing: 0.8,
+      },
+      marker: {
+        size: 8,
+        color: percentuais.map(p => freqColor(p)),
+        line: { color: '#fff', width: 2 },
+      },
+      fill: 'tozeroy',
+      fillcolor: 'rgba(99,102,241,.08)',
+      hovertemplate: '<b>%{x}</b><br>Frequência: %{y}%<br>Total registros: %{customdata}<extra></extra>',
+      customdata: totais,
+    },
+  ];
+
+  const layout = {
+    margin: { t: 10, b: 40, l: 50, r: 20 },
+    height: 280,
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    xaxis: {
+      tickangle: -30,
+      tickfont: { size: 10 },
+      gridcolor: '#f1f5f9',
+    },
+    yaxis: {
+      range: [0, 105],
+      title: { text: '%' },
+      gridcolor: '#f1f5f9',
+    },
+    shapes: [{
+      type: 'line',
+      x0: datas[0], x1: datas[datas.length - 1],
+      y0: 75, y1: 75,
+      line: { color: '#ef4444', width: 1.5, dash: 'dot' },
+    }],
+    showlegend: false,
+  };
+
+  Plotly.newPlot(el, traces, layout, plotCfg);
+
+  // Animate the line drawing effect (decay/simple_anim style)
+  animatePlotlyLine(el, datas, percentuais, totais);
+}
+
+function animatePlotlyLine(el, datas, values, totais) {
+  // Progressive reveal animation - points appear one by one
+  if (values.length <= 1) return;
+  const frames = [];
+  for (let i = 1; i <= values.length; i++) {
+    frames.push({
+      name: 'f' + i,
+      data: [{
+        x: datas.slice(0, i),
+        y: values.slice(0, i),
+        customdata: totais.slice(0, i),
+      }],
+    });
+  }
+
+  Plotly.addFrames(el, frames).then(() => {
+    Plotly.animate(el, frames.map(f => f.name), {
+      transition: { duration: 60, easing: 'cubic-in-out' },
+      frame: { duration: 80, redraw: true },
+      mode: 'afterall',
+    });
+  }).catch(() => {});
 }
 
 // ============================================================
@@ -108,17 +726,49 @@ async function loadInicio() {
     }
     if (vazio) vazio.style.display = 'none';
 
-    grid.innerHTML = turmasCache.map(t => `
+    // Get current turno filter
+    const turnoAtivo = document.querySelector('.inicio-turno-btn.active')?.dataset?.turno || 'todos';
+
+    const filtrado = turmasCache.filter(t => {
+      if (turnoAtivo === 'todos') return true;
+      const periodo = PERIODOS_CONFIG[turnoAtivo] || [];
+      return periodo.includes(t.nome);
+    });
+
+    if (!filtrado.length) {
+      grid.innerHTML = '<div class="col-12 text-center text-muted py-4">Nenhuma turma neste turno.</div>';
+      return;
+    }
+
+    grid.innerHTML = filtrado.map(t => {
+      // Detect period
+      let periodo = 'manha';
+      for (const [p, lista] of Object.entries(PERIODOS_CONFIG)) {
+        if (lista.includes(t.nome)) { periodo = p; break; }
+      }
+      const bgColor = periodo === 'manha' ? '#f59e0b' : periodo === 'tarde' ? '#3b82f6' : '#6366f1';
+      return `
       <div class="col-md-4 col-lg-3">
-        <div class="turma-card" style="cursor:pointer;" onclick="abrirCalendario(${t.id}, '${t.nome.replace(/'/g, "\\'")}')">
-          <h5 class="mb-2">${t.nome}</h5>
-          <span class="badge bg-primary">${t.total_alunos || 0} alunos</span>
-          <p class="text-muted small mt-2 mb-0">${t.descricao || ''}</p>
+        <div class="turma-card-inicio" onclick="abrirCalendario(${t.id}, '${t.nome.replace(/'/g, "\\'")}')">
+          <div class="turma-icon" style="background:${bgColor};">
+            <i class="bi bi-${periodo === 'manha' ? 'sunrise' : periodo === 'tarde' ? 'sun' : 'moon-stars'}"></i>
+          </div>
+          <h4>${t.nome}</h4>
+          <span class="alunos-count">${t.total_alunos || 0} alunos</span>
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   } catch (err) { console.error(err); }
 }
+
+// Turno filter buttons on inicio page
+document.querySelectorAll('.inicio-turno-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.inicio-turno-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadInicio();
+  });
+});
 
 // ============================================================
 // CALENDÁRIO
@@ -733,8 +1383,58 @@ document.getElementById('btn-importar')?.addEventListener('click', async () => {
 // INICIALIZAÇÃO
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
-  navigateTo('inicio');
+  initLogin();
   initIA();
+});
+
+// ============================================================
+// ADMIN: Verificar e Corrigir Duplicados
+// ============================================================
+document.getElementById('btn-verificar-duplicados')?.addEventListener('click', async () => {
+  const resultado = document.getElementById('duplicados-resultado');
+  resultado.innerHTML = '<div class="text-muted"><i class="bi bi-hourglass-split spin"></i> Verificando...</div>';
+
+  try {
+    // Verificar todas as turmas, foco na 1A
+    const data = await api('/api/duplicados');
+
+    if (!data.duplicados || !data.duplicados.length) {
+      resultado.innerHTML = '<div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> Nenhum aluno duplicado encontrado.</div>';
+      document.getElementById('btn-corrigir-duplicados').style.display = 'none';
+      return;
+    }
+
+    let html = `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> <strong>${data.total_grupos}</strong> grupo(s) de duplicados encontrado(s):</div>`;
+    html += '<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Turma</th><th>Nome</th><th>Registros</th><th>IDs</th></tr></thead><tbody>';
+    for (const d of data.duplicados) {
+      const ids = d.registros.map(r => '#' + r.id).join(', ');
+      html += `<tr><td><span class="badge bg-primary">${d.turma}</span></td><td>${d.nome}</td><td>${d.total}</td><td><small class="text-muted">${ids}</small></td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    resultado.innerHTML = html;
+    document.getElementById('btn-corrigir-duplicados').style.display = '';
+  } catch (err) {
+    resultado.innerHTML = `<div class="alert alert-danger mb-0">Erro: ${err.message}</div>`;
+  }
+});
+
+document.getElementById('btn-corrigir-duplicados')?.addEventListener('click', async () => {
+  if (!confirm('Remover alunos duplicados? O registro mais recente será mantido e os anteriores serão removidos.')) return;
+
+  const resultado = document.getElementById('duplicados-resultado');
+  try {
+    const data = await api('/api/duplicados/corrigir', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    resultado.innerHTML = `<div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> <strong>${data.removidos}</strong> registro(s) duplicado(s) removido(s) com sucesso.</div>`;
+    document.getElementById('btn-corrigir-duplicados').style.display = 'none';
+    toast(`${data.removidos} duplicados removidos!`);
+    // Recarregar monitor
+    loadMonitorData();
+  } catch (err) {
+    resultado.innerHTML = `<div class="alert alert-danger mb-0">Erro: ${err.message}</div>`;
+  }
 });
 
 // ============================================================

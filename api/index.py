@@ -1181,6 +1181,481 @@ Dados:\n{contexto}"""
 
 
 # ============================================================
+# AUTENTICAÇÃO — Senhas de acesso
+# ============================================================
+
+# Senha ADMIN: acesso total ao sistema
+SENHA_ADMIN = os.environ.get('SENHA_ADMIN', 'dalmaso2025')
+# Senha FREQUÊNCIA: acesso apenas ao registro de frequência diária
+SENHA_FREQUENCIA = os.environ.get('SENHA_FREQUENCIA', 'frequencia2025')
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def auth_login():
+    """Login com senha. Retorna nível de acesso."""
+    body = request.get_json(force=True)
+    senha = body.get('senha', '').strip()
+
+    if senha == SENHA_ADMIN:
+        return jsonify({'ok': True, 'nivel': 'admin', 'mensagem': 'Acesso total liberado'})
+    elif senha == SENHA_FREQUENCIA:
+        return jsonify({'ok': True, 'nivel': 'frequencia', 'mensagem': 'Acesso à frequência liberado'})
+    else:
+        return jsonify({'ok': False, 'erro': 'Senha incorreta'}), 401
+
+
+# ============================================================
+# DUPLICADOS — Encontrar e remover
+# ============================================================
+
+@app.route('/api/duplicados', methods=['GET'])
+def encontrar_duplicados():
+    """Encontra alunos duplicados (mesmo nome ou mesmo RA) na mesma turma."""
+    turma_nome = request.args.get('turma', '')
+
+    sql = """
+        SELECT a.id, a.nome, a.ra, a.turma_id, t.nome AS turma_nome,
+               a.data_nascimento, a.criado_em
+        FROM alunos a
+        JOIN turmas t ON t.id = a.turma_id
+        WHERE a.ativo = 1
+    """
+    params = []
+    if turma_nome:
+        sql += " AND t.nome = ?"
+        params.append(turma_nome)
+    sql += " ORDER BY t.nome, a.nome, a.criado_em"
+
+    alunos = query(sql, params)
+
+    # Agrupar por turma + nome
+    from collections import defaultdict
+    por_chave = defaultdict(list)
+    for a in alunos:
+        chave = f"{a['turma_id']}_{a['nome'].strip().upper()}"
+        por_chave[chave].append(a)
+
+    duplicados = []
+    for chave, grupo in por_chave.items():
+        if len(grupo) > 1:
+            duplicados.append({
+                'nome': grupo[0]['nome'],
+                'turma': grupo[0]['turma_nome'],
+                'registros': grupo,
+                'total': len(grupo)
+            })
+
+    # Também verificar por RA duplicado na mesma turma
+    por_ra = defaultdict(list)
+    for a in alunos:
+        if a.get('ra'):
+            chave_ra = f"{a['turma_id']}_{a['ra'].strip()}"
+            por_ra[chave_ra].append(a)
+
+    for chave, grupo in por_ra.items():
+        if len(grupo) > 1:
+            # Verificar se já está nos duplicados por nome
+            ids_existentes = set()
+            for d in duplicados:
+                for r in d['registros']:
+                    ids_existentes.add(r['id'])
+            if grupo[0]['id'] not in ids_existentes:
+                duplicados.append({
+                    'nome': grupo[0]['nome'],
+                    'turma': grupo[0]['turma_nome'],
+                    'registros': grupo,
+                    'total': len(grupo),
+                    'tipo': 'ra_duplicado'
+                })
+
+    return jsonify({
+        'duplicados': duplicados,
+        'total_grupos': len(duplicados)
+    })
+
+
+@app.route('/api/duplicados/corrigir', methods=['POST'])
+def corrigir_duplicados():
+    """Remove registros duplicados, mantendo o mais recente."""
+    body = request.get_json(force=True)
+    turma_nome = body.get('turma', '')
+
+    sql = """
+        SELECT a.id, a.nome, a.ra, a.turma_id, t.nome AS turma_nome,
+               a.criado_em, a.atualizado_em
+        FROM alunos a
+        JOIN turmas t ON t.id = a.turma_id
+        WHERE a.ativo = 1
+    """
+    params = []
+    if turma_nome:
+        sql += " AND t.nome = ?"
+        params.append(turma_nome)
+    sql += " ORDER BY t.nome, a.nome"
+
+    alunos = query(sql, params)
+
+    from collections import defaultdict
+    por_chave = defaultdict(list)
+    for a in alunos:
+        chave = f"{a['turma_id']}_{a['nome'].strip().upper()}"
+        por_chave[chave].append(a)
+
+    removidos = 0
+    ids_removidos = []
+    for chave, grupo in por_chave.items():
+        if len(grupo) > 1:
+            # Manter o último criado (maior id), remover os outros
+            grupo_sorted = sorted(grupo, key=lambda x: x['id'])
+            manter = grupo_sorted[-1]
+            for a in grupo_sorted[:-1]:
+                execute("DELETE FROM frequencia WHERE aluno_id = ?", [a['id']])
+                execute("DELETE FROM alunos WHERE id = ?", [a['id']])
+                ids_removidos.append(a['id'])
+                removidos += 1
+
+    return jsonify({
+        'ok': True,
+        'removidos': removidos,
+        'ids_removidos': ids_removidos
+    })
+
+
+# ============================================================
+# MONITORAMENTO — Endpoints do Painel
+# ============================================================
+
+# Configurações de turmas por período e nível
+PERIODOS = {
+    'manha': ['1A', '1B', '1C', '1D', '1E', '1F', '2A', '2B', '2C', '2D', '2E', '3A', '3B', '3C'],
+    'tarde': ['6A', '6B', '6C', '7A', '7B', '7C', '8A', '8B', '8C', '8D', '9A', '9B', '9C', '9D'],
+    'noite': ['1G', '2F', '2G', '3D', '3E'],
+}
+
+NIVEIS = {
+    'ensino_medio': ['1A', '1B', '1C', '1D', '1E', '1F', '2B', '2C', '2D', '2E', '3B', '3C', '1G', '2F', '2G', '3D', '3E'],
+    'ensino_medio_iftp': ['2A', '3A'],
+    'fundamental_final': ['6A', '6B', '6C', '7A', '7B', '7C', '8A', '8B', '8C', '8D', '9A', '9B', '9C', '9D'],
+}
+
+ALL_TURMAS_ORDENADAS = (
+    PERIODOS['manha'] + PERIODOS['tarde'] + PERIODOS['noite']
+)
+
+
+def _obter_turma_ids(nomes_turmas):
+    """Obtém IDs de turmas a partir dos nomes."""
+    if not nomes_turmas:
+        return []
+    placeholders = ','.join(['?' for _ in nomes_turmas])
+    rows = query(f"SELECT id, nome FROM turmas WHERE nome IN ({placeholders})", nomes_turmas)
+    return {r['nome']: r['id'] for r in rows}
+
+
+def _calcular_periodo_datas(tipo_periodo, referencia=None):
+    """
+    Calcula data_inicio e data_fim com base no tipo de período.
+    tipo_periodo: 'diario', 'semanal', 'mensal', 'bimestral', 'anual'
+    referencia: data de referência (default: hoje)
+    """
+    if referencia:
+        try:
+            ref = datetime.strptime(referencia, '%Y-%m-%d').date()
+        except ValueError:
+            ref = date.today()
+    else:
+        ref = date.today()
+
+    if tipo_periodo == 'diario':
+        return ref.isoformat(), ref.isoformat()
+
+    elif tipo_periodo == 'semanal':
+        # Segunda a sexta da semana atual
+        inicio = ref - __import__('datetime').timedelta(days=ref.weekday())
+        fim = inicio + __import__('datetime').timedelta(days=4)  # sexta
+        return inicio.isoformat(), fim.isoformat()
+
+    elif tipo_periodo == 'mensal':
+        inicio = ref.replace(day=1)
+        if ref.month == 12:
+            fim = ref.replace(year=ref.year + 1, month=1, day=1) - __import__('datetime').timedelta(days=1)
+        else:
+            fim = ref.replace(month=ref.month + 1, day=1) - __import__('datetime').timedelta(days=1)
+        return inicio.isoformat(), fim.isoformat()
+
+    elif tipo_periodo == 'bimestral':
+        # Bimestre escolar baseado no mês
+        mes = ref.month
+        if mes <= 2:
+            inicio = ref.replace(month=1, day=1)
+            fim = ref.replace(month=2, day=28)
+        elif mes <= 4:
+            inicio = ref.replace(month=3, day=1)
+            fim = ref.replace(month=4, day=30)
+        elif mes <= 6:
+            inicio = ref.replace(month=5, day=1)
+            fim = ref.replace(month=6, day=30)
+        elif mes <= 8:
+            inicio = ref.replace(month=7, day=1)
+            fim = ref.replace(month=8, day=31)
+        elif mes <= 10:
+            inicio = ref.replace(month=9, day=1)
+            fim = ref.replace(month=10, day=31)
+        else:
+            inicio = ref.replace(month=11, day=1)
+            fim = ref.replace(month=12, day=31)
+        return inicio.isoformat(), fim.isoformat()
+
+    elif tipo_periodo == 'anual':
+        inicio = ref.replace(month=1, day=1)
+        fim = ref.replace(month=12, day=31)
+        return inicio.isoformat(), fim.isoformat()
+
+    return ref.isoformat(), ref.isoformat()
+
+
+@app.route('/api/monitoramento', methods=['GET'])
+def monitoramento():
+    """
+    Endpoint principal do painel de monitoramento.
+    Params:
+      - periodo: diario|semanal|mensal|bimestral|anual
+      - turno: manha|tarde|noite|todos
+      - nivel: ensino_medio|ensino_medio_iftp|fundamental_final|todos
+      - data_ref: YYYY-MM-DD (data de referência)
+    """
+    tipo_periodo = request.args.get('periodo', 'diario')
+    turno = request.args.get('turno', 'todos')
+    nivel = request.args.get('nivel', 'todos')
+    data_ref = request.args.get('data_ref', '')
+
+    data_inicio, data_fim = _calcular_periodo_datas(tipo_periodo, data_ref or None)
+
+    # Filtrar turmas por turno e nível
+    turmas_filtro = set(ALL_TURMAS_ORDENADAS)
+    if turno != 'todos' and turno in PERIODOS:
+        turmas_filtro &= set(PERIODOS[turno])
+    if nivel != 'todos' and nivel in NIVEIS:
+        turmas_filtro &= set(NIVEIS[nivel])
+
+    turmas_filtro = sorted(turmas_filtro, key=lambda x: ALL_TURMAS_ORDENADAS.index(x) if x in ALL_TURMAS_ORDENADAS else 999)
+
+    if not turmas_filtro:
+        return jsonify({'erro': 'Nenhuma turma para o filtro selecionado'}), 400
+
+    turma_map = _obter_turma_ids(turmas_filtro)
+    if not turma_map:
+        return jsonify({
+            'periodo': tipo_periodo,
+            'data_inicio': data_inicio,
+            'data_fim': data_fim,
+            'turno': turno,
+            'nivel': nivel,
+            'resumo': {'total_turmas': 0, 'total_alunos': 0, 'media_frequencia': 0, 'total_presencas': 0, 'total_faltas': 0},
+            'turmas': [],
+            'alunos_criticos': [],
+        })
+
+    turma_ids = list(turma_map.values())
+    placeholders_ids = ','.join(['?' for _ in turma_ids])
+
+    # Total de alunos por turma
+    alunos_por_turma = query(f"""
+        SELECT turma_id, COUNT(*) AS total
+        FROM alunos
+        WHERE ativo = 1 AND turma_id IN ({placeholders_ids})
+        GROUP BY turma_id
+    """, turma_ids)
+    alunos_map = {r['turma_id']: r['total'] for r in alunos_por_turma}
+
+    # Frequência no período
+    freq_turma = query(f"""
+        SELECT f.turma_id,
+               COUNT(DISTINCT f.data) AS dias_registrados,
+               COUNT(f.id) AS total_registros,
+               SUM(CASE WHEN f.presente = 1 THEN 1 ELSE 0 END) AS presencas,
+               SUM(CASE WHEN f.presente = 0 THEN 1 ELSE 0 END) AS faltas
+        FROM frequencia f
+        WHERE f.turma_id IN ({placeholders_ids})
+          AND f.data >= ? AND f.data <= ?
+        GROUP BY f.turma_id
+    """, turma_ids + [data_inicio, data_fim])
+    freq_map = {r['turma_id']: r for r in freq_turma}
+
+    # Montar dados por turma
+    turmas_resultado = []
+    total_alunos_geral = 0
+    total_presencas_geral = 0
+    total_faltas_geral = 0
+
+    for nome_turma in turmas_filtro:
+        tid = turma_map.get(nome_turma)
+        if not tid:
+            continue
+        total_alunos_turma = alunos_map.get(tid, 0)
+        freq = freq_map.get(tid, {})
+        presencas = freq.get('presencas', 0) or 0
+        faltas = freq.get('faltas', 0) or 0
+        dias = freq.get('dias_registrados', 0) or 0
+        total_reg = presencas + faltas
+        perc = round((presencas / total_reg * 100), 1) if total_reg > 0 else 0
+
+        # Determinar período e nível
+        periodo_turma = 'manha'
+        for p, lista in PERIODOS.items():
+            if nome_turma in lista:
+                periodo_turma = p
+                break
+
+        nivel_turma = 'ensino_medio'
+        for n, lista in NIVEIS.items():
+            if nome_turma in lista:
+                nivel_turma = n
+                break
+
+        turmas_resultado.append({
+            'id': tid,
+            'nome': nome_turma,
+            'total_alunos': total_alunos_turma,
+            'presencas': presencas,
+            'faltas': faltas,
+            'dias_registrados': dias,
+            'percentual': perc,
+            'periodo': periodo_turma,
+            'nivel': nivel_turma,
+        })
+
+        total_alunos_geral += total_alunos_turma
+        total_presencas_geral += presencas
+        total_faltas_geral += faltas
+
+    total_geral = total_presencas_geral + total_faltas_geral
+    media_geral = round((total_presencas_geral / total_geral * 100), 1) if total_geral > 0 else 0
+
+    # Alunos críticos (< 75% de frequência no período)
+    alunos_criticos = query(f"""
+        SELECT a.id, a.nome, a.ra, a.turma_id, t.nome AS turma_nome,
+               COUNT(f.id) AS total_dias,
+               SUM(CASE WHEN f.presente = 1 THEN 1 ELSE 0 END) AS presencas,
+               SUM(CASE WHEN f.presente = 0 THEN 1 ELSE 0 END) AS faltas
+        FROM alunos a
+        JOIN turmas t ON t.id = a.turma_id
+        LEFT JOIN frequencia f ON f.aluno_id = a.id AND f.data >= ? AND f.data <= ?
+        WHERE a.ativo = 1 AND a.turma_id IN ({placeholders_ids})
+        GROUP BY a.id, a.nome, a.ra, a.turma_id, t.nome
+        HAVING total_dias > 0
+        ORDER BY presencas * 1.0 / total_dias ASC
+    """, [data_inicio, data_fim] + turma_ids)
+
+    criticos = []
+    for ac in alunos_criticos:
+        total = ac['total_dias'] or 0
+        pres = ac['presencas'] or 0
+        if total > 0:
+            perc_aluno = round((pres / total * 100), 1)
+            if perc_aluno < 75:
+                criticos.append({
+                    'id': ac['id'],
+                    'nome': ac['nome'],
+                    'ra': ac['ra'],
+                    'turma': ac['turma_nome'],
+                    'presencas': pres,
+                    'faltas': ac['faltas'] or 0,
+                    'total_dias': total,
+                    'percentual': perc_aluno,
+                })
+
+    # Frequência diária no período (para gráfico temporal)
+    freq_diaria = query(f"""
+        SELECT f.data,
+               COUNT(f.id) AS total,
+               SUM(CASE WHEN f.presente = 1 THEN 1 ELSE 0 END) AS presencas
+        FROM frequencia f
+        WHERE f.turma_id IN ({placeholders_ids})
+          AND f.data >= ? AND f.data <= ?
+        GROUP BY f.data
+        ORDER BY f.data
+    """, turma_ids + [data_inicio, data_fim])
+
+    for fd in freq_diaria:
+        t = fd.get('total', 0) or 0
+        p = fd.get('presencas', 0) or 0
+        fd['percentual'] = round((p / t * 100), 1) if t > 0 else 0
+
+    # Frequência por período (manhã/tarde/noite)
+    freq_por_periodo = {}
+    for periodo_nome, turmas_periodo in PERIODOS.items():
+        ids_periodo = [turma_map[t] for t in turmas_periodo if t in turma_map and t in turmas_filtro]
+        if ids_periodo:
+            pres_p = sum(freq_map.get(tid, {}).get('presencas', 0) or 0 for tid in ids_periodo)
+            falt_p = sum(freq_map.get(tid, {}).get('faltas', 0) or 0 for tid in ids_periodo)
+            total_p = pres_p + falt_p
+            freq_por_periodo[periodo_nome] = {
+                'presencas': pres_p,
+                'faltas': falt_p,
+                'percentual': round((pres_p / total_p * 100), 1) if total_p > 0 else 0,
+                'total_turmas': len(ids_periodo),
+            }
+
+    return jsonify({
+        'periodo': tipo_periodo,
+        'data_inicio': data_inicio,
+        'data_fim': data_fim,
+        'turno': turno,
+        'nivel': nivel,
+        'resumo': {
+            'total_turmas': len(turmas_resultado),
+            'total_alunos': total_alunos_geral,
+            'media_frequencia': media_geral,
+            'total_presencas': total_presencas_geral,
+            'total_faltas': total_faltas_geral,
+        },
+        'turmas': turmas_resultado,
+        'alunos_criticos': criticos[:50],
+        'freq_diaria': freq_diaria,
+        'freq_por_periodo': freq_por_periodo,
+    })
+
+
+@app.route('/api/monitoramento/turma/<int:tid>', methods=['GET'])
+def monitoramento_turma_detalhe(tid):
+    """Detalhe de monitoramento de uma turma específica."""
+    tipo_periodo = request.args.get('periodo', 'mensal')
+    data_ref = request.args.get('data_ref', '')
+
+    data_inicio, data_fim = _calcular_periodo_datas(tipo_periodo, data_ref or None)
+
+    turma_info = query("SELECT * FROM turmas WHERE id = ?", [tid])
+    if not turma_info:
+        return jsonify({'erro': 'Turma não encontrada'}), 404
+
+    alunos = query("""
+        SELECT a.id, a.nome, a.ra, a.numero_chamada,
+               COUNT(f.id) AS total_dias,
+               SUM(CASE WHEN f.presente = 1 THEN 1 ELSE 0 END) AS presencas,
+               SUM(CASE WHEN f.presente = 0 THEN 1 ELSE 0 END) AS faltas
+        FROM alunos a
+        LEFT JOIN frequencia f ON f.aluno_id = a.id AND f.data >= ? AND f.data <= ?
+        WHERE a.turma_id = ? AND a.ativo = 1
+        GROUP BY a.id, a.nome, a.ra, a.numero_chamada
+        ORDER BY a.nome
+    """, [data_inicio, data_fim, tid])
+
+    for a in alunos:
+        total = a['total_dias'] or 0
+        pres = a['presencas'] or 0
+        a['percentual'] = round((pres / total * 100), 1) if total > 0 else 0
+
+    return jsonify({
+        'turma': turma_info[0],
+        'periodo': tipo_periodo,
+        'data_inicio': data_inicio,
+        'data_fim': data_fim,
+        'alunos': alunos,
+    })
+
+
+# ============================================================
 # ROTA DE SAÚDE
 # ============================================================
 

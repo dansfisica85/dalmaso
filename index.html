@@ -12,31 +12,75 @@
 </head>
 <body>
 
-<div class="d-flex" id="wrapper">
+<!-- =============== TELA DE LOGIN =============== -->
+<div id="login-screen" class="login-screen">
+  <div class="login-container">
+    <div class="login-header">
+      <div class="login-logo">
+        <i class="bi bi-mortarboard-fill"></i>
+      </div>
+      <h1>DALMASO</h1>
+      <p>Sistema de Gestão Escolar</p>
+    </div>
+    <form id="login-form" class="login-form">
+      <div class="mb-3">
+        <label class="form-label text-white-50">Senha de Acesso</label>
+        <div class="input-group">
+          <span class="input-group-text bg-transparent border-end-0 text-white-50"><i class="bi bi-lock-fill"></i></span>
+          <input type="password" class="form-control login-input" id="login-senha" placeholder="Digite a senha..." autofocus />
+          <button type="button" class="btn btn-outline-light border-start-0" id="toggle-senha">
+            <i class="bi bi-eye"></i>
+          </button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary w-100 login-btn">
+        <i class="bi bi-box-arrow-in-right"></i> Entrar
+      </button>
+      <div id="login-erro" class="mt-3 text-center" style="display:none;">
+        <span class="badge bg-danger px-3 py-2"><i class="bi bi-exclamation-triangle"></i> <span id="login-erro-msg"></span></span>
+      </div>
+    </form>
+    <div class="login-footer">
+      <small>Gestão Escolar &copy; 2025 — Todos os direitos reservados</small>
+    </div>
+  </div>
+</div>
+
+<!-- =============== APP PRINCIPAL =============== -->
+<div class="d-flex" id="wrapper" style="display:none !important;">
   <nav id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <i class="bi bi-mortarboard-fill"></i>
       <span>DALMASO</span>
     </div>
     <ul class="sidebar-nav">
-      <li class="active" data-page="inicio">
+      <li class="active" data-page="monitoramento">
+        <i class="bi bi-speedometer2"></i> <span>Monitoramento</span>
+      </li>
+      <li data-page="inicio">
         <i class="bi bi-house-fill"></i> <span>Início</span>
       </li>
-      <li data-page="alunos">
+      <li data-page="alunos" data-require="admin">
         <i class="bi bi-people-fill"></i> <span>Alunos</span>
       </li>
-      <li data-page="relatorios">
+      <li data-page="relatorios" data-require="admin">
         <i class="bi bi-graph-up"></i> <span>Relatórios</span>
       </li>
-      <li data-page="importar">
+      <li data-page="importar" data-require="admin">
         <i class="bi bi-cloud-upload-fill"></i> <span>Importar Dados</span>
       </li>
-      <li data-page="turmas">
+      <li data-page="turmas" data-require="admin">
         <i class="bi bi-collection-fill"></i> <span>Turmas</span>
       </li>
     </ul>
     <div class="sidebar-footer">
-      <small>Gestão Escolar v2.0</small>
+      <div class="d-flex align-items-center justify-content-between">
+        <small id="label-nivel-acesso" class="text-truncate"></small>
+        <button class="btn btn-sm btn-outline-light" id="btn-logout" title="Sair">
+          <i class="bi bi-box-arrow-right"></i>
+        </button>
+      </div>
+      <small class="d-block mt-1">Gestão Escolar v3.0</small>
     </div>
   </nav>
 
@@ -45,10 +89,278 @@
       <i class="bi bi-list"></i>
     </button>
 
+    <!-- =============== PAINEL DE MONITORAMENTO =============== -->
+    <section id="page-monitoramento" class="page active">
+      <!-- Cabeçalho do Painel -->
+      <div class="monitor-header">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div>
+            <h2 class="page-title mb-0"><i class="bi bi-speedometer2"></i> Painel de Monitoramento</h2>
+            <p class="text-muted mb-0 small" id="monitor-subtitulo">Visão geral da frequência escolar</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-success pulse-badge" id="monitor-status">
+              <i class="bi bi-circle-fill"></i> Ao vivo
+            </span>
+            <span class="text-muted small" id="monitor-ultima-atualizacao"></span>
+            <button class="btn btn-sm btn-outline-primary" id="btn-atualizar-monitor" title="Atualizar">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filtros do Monitoramento -->
+      <div class="monitor-filtros">
+        <!-- Abas de Período -->
+        <div class="monitor-tabs">
+          <button class="monitor-tab active" data-periodo="diario">
+            <i class="bi bi-calendar-day"></i> Diário
+          </button>
+          <button class="monitor-tab" data-periodo="semanal">
+            <i class="bi bi-calendar-week"></i> Semanal
+          </button>
+          <button class="monitor-tab" data-periodo="mensal">
+            <i class="bi bi-calendar-month"></i> Mensal
+          </button>
+          <button class="monitor-tab" data-periodo="bimestral">
+            <i class="bi bi-calendar3"></i> Bimestral
+          </button>
+          <button class="monitor-tab" data-periodo="anual">
+            <i class="bi bi-calendar-range"></i> Anual
+          </button>
+        </div>
+
+        <!-- Filtros de Turno e Nível -->
+        <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+          <div class="monitor-filter-group">
+            <label class="small text-muted me-1">Turno:</label>
+            <select class="form-select form-select-sm monitor-select" id="filtro-turno">
+              <option value="todos">Todos</option>
+              <option value="manha">Manhã</option>
+              <option value="tarde">Tarde</option>
+              <option value="noite">Noite</option>
+            </select>
+          </div>
+          <div class="monitor-filter-group">
+            <label class="small text-muted me-1">Nível:</label>
+            <select class="form-select form-select-sm monitor-select" id="filtro-nivel">
+              <option value="todos">Todos</option>
+              <option value="ensino_medio">Ensino Médio</option>
+              <option value="ensino_medio_iftp">Ensino Médio IFTP</option>
+              <option value="fundamental_final">Fundamental (Anos Finais)</option>
+            </select>
+          </div>
+          <div class="monitor-filter-group">
+            <label class="small text-muted me-1">Data Ref.:</label>
+            <input type="date" class="form-control form-control-sm monitor-select" id="filtro-data-ref" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Cards Resumo -->
+      <div class="row g-3 mb-4" id="monitor-cards">
+        <div class="col-6 col-lg-3">
+          <div class="monitor-card card-turmas">
+            <div class="monitor-card-icon"><i class="bi bi-collection-fill"></i></div>
+            <div class="monitor-card-body">
+              <span class="monitor-card-value" id="mc-turmas">--</span>
+              <span class="monitor-card-label">Turmas</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="monitor-card card-alunos">
+            <div class="monitor-card-icon"><i class="bi bi-people-fill"></i></div>
+            <div class="monitor-card-body">
+              <span class="monitor-card-value" id="mc-alunos">--</span>
+              <span class="monitor-card-label">Alunos</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="monitor-card card-frequencia">
+            <div class="monitor-card-icon"><i class="bi bi-check-circle-fill"></i></div>
+            <div class="monitor-card-body">
+              <span class="monitor-card-value" id="mc-frequencia">--%</span>
+              <span class="monitor-card-label">Frequência Média</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="monitor-card card-criticos">
+            <div class="monitor-card-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+            <div class="monitor-card-body">
+              <span class="monitor-card-value" id="mc-criticos">--</span>
+              <span class="monitor-card-label">Alunos Críticos</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Frequência por Período do Dia -->
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <div class="monitor-periodo-card periodo-manha">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="bi bi-sunrise-fill fs-4"></i>
+              <h6 class="mb-0">Manhã</h6>
+            </div>
+            <div class="d-flex align-items-end justify-content-between">
+              <span class="monitor-periodo-perc" id="mp-manha-perc">--%</span>
+              <small class="text-muted" id="mp-manha-turmas">-- turmas</small>
+            </div>
+            <div class="monitor-progress mt-2">
+              <div class="monitor-progress-bar bg-warning" id="mp-manha-bar" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="monitor-periodo-card periodo-tarde">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="bi bi-sun-fill fs-4"></i>
+              <h6 class="mb-0">Tarde</h6>
+            </div>
+            <div class="d-flex align-items-end justify-content-between">
+              <span class="monitor-periodo-perc" id="mp-tarde-perc">--%</span>
+              <small class="text-muted" id="mp-tarde-turmas">-- turmas</small>
+            </div>
+            <div class="monitor-progress mt-2">
+              <div class="monitor-progress-bar bg-info" id="mp-tarde-bar" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="monitor-periodo-card periodo-noite">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="bi bi-moon-stars-fill fs-4"></i>
+              <h6 class="mb-0">Noite</h6>
+            </div>
+            <div class="d-flex align-items-end justify-content-between">
+              <span class="monitor-periodo-perc" id="mp-noite-perc">--%</span>
+              <small class="text-muted" id="mp-noite-turmas">-- turmas</small>
+            </div>
+            <div class="monitor-progress mt-2">
+              <div class="monitor-progress-bar bg-primary" id="mp-noite-bar" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gráficos -->
+      <div class="row g-3 mb-4">
+        <div class="col-lg-8">
+          <div class="monitor-chart-card">
+            <h6 class="monitor-chart-title"><i class="bi bi-bar-chart-fill"></i> Frequência por Turma</h6>
+            <div id="chart-monitor-turmas" style="height:320px;"></div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="monitor-chart-card">
+            <h6 class="monitor-chart-title"><i class="bi bi-pie-chart-fill"></i> Presença vs Ausência</h6>
+            <div id="chart-monitor-pizza" style="height:320px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gráfico Temporal -->
+      <div class="row g-3 mb-4">
+        <div class="col-12">
+          <div class="monitor-chart-card">
+            <h6 class="monitor-chart-title"><i class="bi bi-graph-up"></i> Evolução da Frequência no Período</h6>
+            <div id="chart-monitor-temporal" style="height:280px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabela de Turmas -->
+      <div class="monitor-chart-card mb-4">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h6 class="monitor-chart-title mb-0"><i class="bi bi-table"></i> Detalhamento por Turma</h6>
+          <div class="d-flex gap-1">
+            <button class="btn btn-sm btn-outline-secondary monitor-view-btn active" data-view="table"><i class="bi bi-list"></i></button>
+            <button class="btn btn-sm btn-outline-secondary monitor-view-btn" data-view="grid"><i class="bi bi-grid-3x3-gap"></i></button>
+          </div>
+        </div>
+        <!-- View: Tabela -->
+        <div id="monitor-view-table" class="table-responsive">
+          <table class="table table-hover mb-0" id="tabela-monitor">
+            <thead>
+              <tr>
+                <th>Turma</th>
+                <th>Turno</th>
+                <th>Nível</th>
+                <th class="text-center">Alunos</th>
+                <th class="text-center">Presenças</th>
+                <th class="text-center">Faltas</th>
+                <th class="text-center">Dias Reg.</th>
+                <th>Frequência</th>
+              </tr>
+            </thead>
+            <tbody id="corpo-tabela-monitor"></tbody>
+          </table>
+        </div>
+        <!-- View: Grid -->
+        <div id="monitor-view-grid" class="row g-2" style="display:none;"></div>
+      </div>
+
+      <!-- Alunos Críticos -->
+      <div class="monitor-chart-card mb-4">
+        <h6 class="monitor-chart-title mb-3">
+          <i class="bi bi-exclamation-triangle-fill text-danger"></i> Alunos em Situação Crítica (&lt; 75% de frequência)
+        </h6>
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Aluno</th>
+                <th>RA</th>
+                <th>Turma</th>
+                <th class="text-center">Presenças</th>
+                <th class="text-center">Faltas</th>
+                <th class="text-center">Total</th>
+                <th>Frequência</th>
+              </tr>
+            </thead>
+            <tbody id="corpo-tabela-criticos"></tbody>
+          </table>
+        </div>
+        <div id="monitor-sem-criticos" class="text-center text-muted py-4" style="display:none;">
+          <i class="bi bi-check-circle text-success fs-2"></i>
+          <p class="mt-2 mb-0">Nenhum aluno em situação crítica neste período.</p>
+        </div>
+      </div>
+
+      <!-- Admin: Ferramentas de Manutenção -->
+      <div class="monitor-chart-card mb-4" data-require="admin" id="admin-tools-section">
+        <h6 class="monitor-chart-title mb-3">
+          <i class="bi bi-tools text-warning"></i> Ferramentas de Administração
+        </h6>
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-sm btn-outline-warning" id="btn-verificar-duplicados">
+            <i class="bi bi-people"></i> Verificar Duplicados
+          </button>
+          <button class="btn btn-sm btn-outline-danger" id="btn-corrigir-duplicados" style="display:none;">
+            <i class="bi bi-trash"></i> Corrigir Duplicados
+          </button>
+        </div>
+        <div id="duplicados-resultado" class="mt-3"></div>
+      </div>
+    </section>
+
     <!-- INÍCIO: Cards de Turmas -->
-    <section id="page-inicio" class="page active">
+    <section id="page-inicio" class="page">
       <h2 class="page-title"><i class="bi bi-house-fill"></i> Séries / Turmas</h2>
       <p class="text-muted mb-3">Selecione uma turma para registrar frequência no calendário</p>
+
+      <!-- Filtros de turno para a tela inicial -->
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <button class="btn btn-sm btn-outline-primary inicio-turno-btn active" data-turno="todos">Todos</button>
+        <button class="btn btn-sm btn-outline-warning inicio-turno-btn" data-turno="manha"><i class="bi bi-sunrise"></i> Manhã</button>
+        <button class="btn btn-sm btn-outline-info inicio-turno-btn" data-turno="tarde"><i class="bi bi-sun"></i> Tarde</button>
+        <button class="btn btn-sm btn-outline-dark inicio-turno-btn" data-turno="noite"><i class="bi bi-moon-stars"></i> Noite</button>
+      </div>
+
       <div class="row g-3" id="grid-inicio"></div>
       <div id="inicio-vazio" class="text-center text-muted py-5" style="display:none;">
         <i class="bi bi-collection" style="font-size:3rem;"></i>
