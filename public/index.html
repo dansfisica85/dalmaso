@@ -237,6 +237,41 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<!-- CHAT IA FLUTUANTE -->
+<div id="ia-fab" class="ia-fab" title="Assistente IA">
+  <i class="bi bi-robot"></i>
+</div>
+
+<div id="ia-panel" class="ia-panel" style="display:none;">
+  <div class="ia-panel-header">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-robot fs-5"></i>
+      <strong>Assistente Pedagógico</strong>
+    </div>
+    <button class="btn btn-sm btn-outline-light" id="ia-close"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="ia-panel-body" id="ia-mensagens">
+    <div class="ia-msg ia-msg-bot">
+      Olá! Sou o <strong>Assistente Pedagógico DALMASO</strong>. 🎓<br>
+      Posso analisar frequência, interpretar dados e sugerir intervenções. Como posso ajudar?
+    </div>
+  </div>
+  <div class="ia-panel-actions mb-2 px-3">
+    <button class="btn btn-sm btn-outline-primary ia-quick-btn" data-action="analisar">
+      <i class="bi bi-bar-chart"></i> Analisar Frequência
+    </button>
+    <button class="btn btn-sm btn-outline-primary ia-quick-btn" data-action="criticos">
+      <i class="bi bi-exclamation-triangle"></i> Alunos Críticos
+    </button>
+  </div>
+  <div class="ia-panel-footer">
+    <input type="text" class="form-control" id="ia-input" placeholder="Digite sua pergunta..." />
+    <button class="btn btn-primary" id="ia-enviar"><i class="bi bi-send-fill"></i></button>
+  </div>
+</div>
+
 <script src="/js/app.js"></script>
 </body>
 </html>
