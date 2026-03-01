@@ -52,7 +52,7 @@ def query(sql, params=None):
     """SELECT → retorna lista de dicts."""
     conn = get_db()
     try:
-        cursor = conn.execute(sql, params or [])
+        cursor = conn.execute(sql, tuple(params or []))
         if cursor.description:
             cols = [d[0] for d in cursor.description]
             return [dict(zip(cols, row)) for row in cursor.fetchall()]
@@ -68,7 +68,7 @@ def execute(sql, params=None):
     """INSERT / UPDATE / DELETE → retorna lastrowid."""
     conn = get_db()
     try:
-        cursor = conn.execute(sql, params or [])
+        cursor = conn.execute(sql, tuple(params or []))
         conn.commit()
         return cursor.lastrowid
     finally:
@@ -83,7 +83,7 @@ def execute_many(statements):
     conn = get_db()
     try:
         for sql, params in statements:
-            conn.execute(sql, params or [])
+            conn.execute(sql, tuple(params or []))
         conn.commit()
     finally:
         try:
