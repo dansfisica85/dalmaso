@@ -1012,7 +1012,20 @@
       console.log('Voltou?', ok);
       return ok;
     },
-    // Teste 7: Mostra o HTML ao redor de texto específico (para debug)
+    // Teste 7: Testa extração de RA e Data de Nascimento
+    testarRA: () => {
+      console.log('=== Testando extração de RA ===');
+      const result = extrairRA();
+      console.log('Resultado:', result);
+      return result;
+    },
+    testarDataNasc: () => {
+      console.log('=== Testando extração de Data de Nascimento ===');
+      const result = extrairDataNascimento();
+      console.log('Resultado:', result);
+      return result;
+    },
+    // Teste 8: Mostra o HTML ao redor de texto específico (para debug)
     encontrarTexto: (texto) => {
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       const resultados = [];
