@@ -207,12 +207,13 @@ body {
   background: #86efac;
 }
 .dia-registrado {
-  background: var(--cal-recorded) !important;
-  color: white !important;
+  background: #bbf7d0 !important;
+  color: #166534 !important;
   font-weight: 700;
+  box-shadow: inset 0 0 0 2px #f59e0b;
 }
 .dia-registrado:hover {
-  background: #16a34a !important;
+  background: #86efac !important;
 }
 .dia-hoje {
   box-shadow: inset 0 0 0 2px var(--cal-today);
@@ -244,7 +245,7 @@ body {
   display: inline-block;
 }
 .bg-dia-letivo { background: #dcfce7; border: 1px solid #86efac; }
-.bg-dia-registrado { background: #22c55e; }
+.bg-dia-registrado { background: #bbf7d0; box-shadow: inset 0 0 0 2px #f59e0b; }
 .bg-dia-hoje { background: #fff; box-shadow: inset 0 0 0 2px #fbbf24; }
 .bg-dia-fds { background: #f8fafc; border: 1px solid #e2e8f0; }
 
