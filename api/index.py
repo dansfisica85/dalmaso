@@ -11,7 +11,7 @@ import io
 import json
 import math
 from datetime import datetime, date
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 
 # ── Banco de Dados ──────────────────────────────────────────
@@ -26,6 +26,11 @@ import pandas as pd
 
 app = Flask(__name__)
 CORS(app)
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(_dir, '..', 'public')
+if not os.path.isdir(STATIC_DIR):
+    STATIC_DIR = os.path.join(os.getcwd(), 'public')
 
 # ============================================================
 # CONEXÃO COM O BANCO
@@ -570,6 +575,32 @@ def resumo_frequencia():
     return jsonify(rows)
 
 
+@app.route('/api/frequencia/calendario', methods=['GET'])
+def calendario_frequencia():
+    """Dados de frequência para o calendário anual."""
+    turma_id = request.args.get('turma_id')
+    ano = request.args.get('ano', str(date.today().year))
+    if not turma_id:
+        return jsonify({'erro': 'turma_id é obrigatório'}), 400
+    freq = query(
+        """SELECT data,
+                  COUNT(*) as total,
+                  SUM(CASE WHEN presente = 1 THEN 1 ELSE 0 END) as presencas
+           FROM frequencia
+           WHERE turma_id = ? AND data LIKE ?
+           GROUP BY data""",
+        [int(turma_id), f"{ano}%"]
+    )
+    total_alunos = query(
+        "SELECT COUNT(*) as n FROM alunos WHERE turma_id = ? AND ativo = 1",
+        [int(turma_id)]
+    )
+    return jsonify({
+        'total_alunos': total_alunos[0]['n'] if total_alunos else 0,
+        'datas': {f['data']: {'total': f['total'], 'presencas': f['presencas']} for f in freq}
+    })
+
+
 # ============================================================
 # ROTAS — DASHBOARD / GRÁFICOS
 # ============================================================
@@ -982,6 +1013,23 @@ def health():
         'db': 'turso' if USE_TURSO else 'sqlite_local',
         'timestamp': datetime.now().isoformat(),
     })
+
+
+# ============================================================
+# SERVIR ARQUIVOS ESTÁTICOS (SPA)
+# ============================================================
+
+@app.route('/')
+def serve_index():
+    return send_from_directory(STATIC_DIR, 'index.html')
+
+
+@app.route('/<path:filepath>')
+def serve_static(filepath):
+    try:
+        return send_from_directory(STATIC_DIR, filepath)
+    except Exception:
+        return send_from_directory(STATIC_DIR, 'index.html')
 
 
 # ============================================================

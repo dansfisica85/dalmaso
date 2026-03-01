@@ -4,20 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DALMASO — Gestão Escolar</title>
-  <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
-  <!-- Google Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <!-- Plotly.js -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet" />
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-  <!-- CSS customizado -->
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
 
-<!-- SIDEBAR -->
 <div class="d-flex" id="wrapper">
   <nav id="sidebar" class="sidebar">
     <div class="sidebar-header">
@@ -25,14 +19,11 @@
       <span>DALMASO</span>
     </div>
     <ul class="sidebar-nav">
-      <li class="active" data-page="dashboard">
-        <i class="bi bi-speedometer2"></i> <span>Dashboard</span>
+      <li class="active" data-page="inicio">
+        <i class="bi bi-house-fill"></i> <span>Início</span>
       </li>
       <li data-page="alunos">
         <i class="bi bi-people-fill"></i> <span>Alunos</span>
-      </li>
-      <li data-page="frequencia">
-        <i class="bi bi-calendar-check-fill"></i> <span>Frequência</span>
       </li>
       <li data-page="relatorios">
         <i class="bi bi-graph-up"></i> <span>Relatórios</span>
@@ -49,59 +40,76 @@
     </div>
   </nav>
 
-  <!-- CONTEÚDO PRINCIPAL -->
   <main id="main-content" class="main-content">
     <button class="btn btn-sm btn-outline-secondary d-md-none mb-3" id="btnToggleSidebar">
       <i class="bi bi-list"></i>
     </button>
-    <!-- DASHBOARD -->
-    <section id="page-dashboard" class="page active">
-      <h2 class="page-title"><i class="bi bi-speedometer2"></i> Dashboard</h2>
-      <div class="row g-3 mb-4" id="cards-resumo">
-        <div class="col-6 col-lg-3">
-          <div class="card-stat card-stat-blue">
-            <div class="card-stat-icon"><i class="bi bi-people-fill"></i></div>
-            <div class="card-stat-value" id="stat-alunos">0</div>
-            <div class="card-stat-label">Alunos</div>
-          </div>
+
+    <!-- INÍCIO: Cards de Turmas -->
+    <section id="page-inicio" class="page active">
+      <h2 class="page-title"><i class="bi bi-house-fill"></i> Séries / Turmas</h2>
+      <p class="text-muted mb-3">Selecione uma turma para registrar frequência no calendário</p>
+      <div class="row g-3" id="grid-inicio"></div>
+      <div id="inicio-vazio" class="text-center text-muted py-5" style="display:none;">
+        <i class="bi bi-collection" style="font-size:3rem;"></i>
+        <p class="mt-2">Nenhuma turma cadastrada. Vá em <strong>Turmas</strong> ou <strong>Importar</strong> para começar.</p>
+      </div>
+    </section>
+
+    <!-- CALENDÁRIO ANUAL -->
+    <section id="page-calendario" class="page">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-outline-secondary btn-sm" id="btn-voltar-inicio"><i class="bi bi-arrow-left"></i></button>
+          <h2 class="page-title mb-0"><i class="bi bi-calendar3"></i> <span id="titulo-calendario"></span></h2>
         </div>
-        <div class="col-6 col-lg-3">
-          <div class="card-stat card-stat-green">
-            <div class="card-stat-icon"><i class="bi bi-collection-fill"></i></div>
-            <div class="card-stat-value" id="stat-turmas">0</div>
-            <div class="card-stat-label">Turmas</div>
-          </div>
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-sm btn-outline-primary" id="btn-ano-anterior"><i class="bi bi-chevron-left"></i></button>
+          <span class="fw-bold fs-5" id="label-ano"></span>
+          <button class="btn btn-sm btn-outline-primary" id="btn-ano-proximo"><i class="bi bi-chevron-right"></i></button>
         </div>
-        <div class="col-6 col-lg-3">
-          <div class="card-stat card-stat-purple">
-            <div class="card-stat-icon"><i class="bi bi-calendar-check"></i></div>
-            <div class="card-stat-value" id="stat-freq">0%</div>
-            <div class="card-stat-label">Frequência Geral</div>
+      </div>
+      <div class="calendario-legenda mb-3">
+        <span class="legenda-item"><span class="legenda-cor bg-dia-letivo"></span> Dia letivo</span>
+        <span class="legenda-item"><span class="legenda-cor bg-dia-registrado"></span> Frequência registrada</span>
+        <span class="legenda-item"><span class="legenda-cor bg-dia-hoje"></span> Hoje</span>
+        <span class="legenda-item"><span class="legenda-cor bg-dia-fds"></span> Fim de semana</span>
+      </div>
+      <div id="container-calendario"></div>
+    </section>
+
+    <!-- CHAMADA -->
+    <section id="page-chamada" class="page">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <button class="btn btn-outline-secondary btn-sm" id="btn-voltar-calendario"><i class="bi bi-arrow-left"></i></button>
+        <h2 class="page-title mb-0"><i class="bi bi-clipboard-check"></i> Chamada</h2>
+      </div>
+      <div class="card p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <span class="badge bg-primary fs-6 me-2" id="badge-turma-chamada"></span>
+            <span class="badge bg-secondary fs-6" id="badge-data-chamada"></span>
           </div>
-        </div>
-        <div class="col-6 col-lg-3">
-          <div class="card-stat card-stat-orange">
-            <div class="card-stat-icon"><i class="bi bi-clipboard-data"></i></div>
-            <div class="card-stat-value" id="stat-registros">0</div>
-            <div class="card-stat-label">Registros Freq.</div>
+          <div>
+            <button class="btn btn-outline-secondary btn-sm me-1" id="btn-marcar-todos"><i class="bi bi-check-all"></i> Todos Presentes</button>
+            <button class="btn btn-outline-warning btn-sm me-2" id="btn-desmarcar-todos"><i class="bi bi-x-circle"></i> Todos Ausentes</button>
+            <button class="btn btn-success" id="btn-salvar-chamada"><i class="bi bi-check-circle"></i> Salvar Chamada</button>
           </div>
         </div>
       </div>
-      <div class="row g-3 mb-4">
-        <div class="col-md-8"><div class="chart-card"><h6 class="chart-title">Alunos por Turma</h6><div id="chart-por-turma"></div></div></div>
-        <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Distribuição por Sexo</h6><div id="chart-por-sexo"></div></div></div>
-      </div>
-      <div class="row g-3 mb-4">
-        <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Raça / Cor</h6><div id="chart-por-raca"></div></div></div>
-        <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Faixa Etária</h6><div id="chart-por-idade"></div></div></div>
-        <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Bolsa Família</h6><div id="chart-bolsa"></div></div></div>
-      </div>
-      <div class="row g-3 mb-4">
-        <div class="col-md-6"><div class="chart-card"><h6 class="chart-title">Indicadores Sociais</h6><div id="chart-indicadores"></div></div></div>
-        <div class="col-md-6"><div class="chart-card"><h6 class="chart-title">Frequência ao Longo do Tempo</h6><div id="chart-freq-tempo"></div></div></div>
-      </div>
-      <div class="row g-3 mb-4">
-        <div class="col-12"><div class="chart-card"><h6 class="chart-title">Frequência por Turma (%)</h6><div id="chart-freq-turma"></div></div></div>
+      <div class="table-responsive">
+        <table class="table table-hover" id="tabela-chamada">
+          <thead>
+            <tr>
+              <th style="width:50px">Nº</th>
+              <th>Nome do Aluno</th>
+              <th>RA</th>
+              <th class="text-center" style="width:110px">Presença</th>
+              <th>Observação</th>
+            </tr>
+          </thead>
+          <tbody id="corpo-tabela-chamada"></tbody>
+        </table>
       </div>
     </section>
 
@@ -127,7 +135,7 @@
       </div>
       <div id="alunos-vazio" class="text-center text-muted py-5" style="display:none;">
         <i class="bi bi-inbox" style="font-size:3rem;"></i>
-        <p class="mt-2">Nenhum aluno encontrado. Importe dados ou adicione manualmente.</p>
+        <p class="mt-2">Nenhum aluno encontrado.</p>
       </div>
     </section>
 
@@ -135,32 +143,6 @@
     <section id="page-aluno-detalhe" class="page">
       <button class="btn btn-outline-secondary btn-sm mb-3" id="btn-voltar-alunos"><i class="bi bi-arrow-left"></i> Voltar</button>
       <div id="aluno-detalhe-conteudo"></div>
-    </section>
-
-    <!-- FREQUÊNCIA -->
-    <section id="page-frequencia" class="page">
-      <h2 class="page-title"><i class="bi bi-calendar-check-fill"></i> Frequência</h2>
-      <div class="row mb-3">
-        <div class="col-md-4"><label class="form-label">Turma</label><select class="form-select" id="freq-turma"></select></div>
-        <div class="col-md-3"><label class="form-label">Data</label><input type="date" class="form-control" id="freq-data" /></div>
-        <div class="col-md-3 d-flex align-items-end">
-          <button class="btn btn-primary me-2" id="btn-carregar-freq"><i class="bi bi-search"></i> Carregar</button>
-          <button class="btn btn-success" id="btn-salvar-freq" disabled><i class="bi bi-check-circle"></i> Salvar</button>
-        </div>
-        <div class="col-md-2 d-flex align-items-end">
-          <button class="btn btn-outline-secondary" id="btn-marcar-todos" title="Marcar todos presentes"><i class="bi bi-check-all"></i> Todos</button>
-        </div>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-hover" id="tabela-freq" style="display:none;">
-          <thead><tr><th style="width:50px;">Nº</th><th>Nome</th><th>RA</th><th style="width:100px;" class="text-center">Presente</th><th>Observação</th></tr></thead>
-          <tbody id="corpo-tabela-freq"></tbody>
-        </table>
-      </div>
-      <div id="freq-vazio" class="text-center text-muted py-5">
-        <i class="bi bi-calendar3" style="font-size:3rem;"></i>
-        <p class="mt-2">Selecione uma turma e data para registrar frequência.</p>
-      </div>
     </section>
 
     <!-- RELATÓRIOS -->
@@ -186,10 +168,7 @@
     <section id="page-importar" class="page">
       <h2 class="page-title"><i class="bi bi-cloud-upload-fill"></i> Importar Dados</h2>
       <div class="card p-4" style="max-width:600px;">
-        <p class="text-muted mb-3">
-          Importe dados de alunos a partir de um arquivo Excel (.xlsx) ou CSV (.csv)
-          gerado pela extensão Chrome do SED.
-        </p>
+        <p class="text-muted mb-3">Importe dados de alunos a partir de um arquivo Excel (.xlsx) ou CSV (.csv) gerado pela extensão Chrome do SED.</p>
         <div class="mb-3"><label class="form-label">Arquivo</label>
           <input type="file" class="form-control" id="input-arquivo" accept=".xlsx,.xls,.csv" /></div>
         <button class="btn btn-primary" id="btn-importar"><i class="bi bi-upload"></i> Importar</button>
@@ -257,9 +236,7 @@
   </div>
 </div>
 
-<!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<!-- App JS -->
 <script src="/js/app.js"></script>
 </body>
 </html>

@@ -20,6 +20,11 @@
   --radius: 12px;
   --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -4px rgba(0,0,0,.1);
+  --cal-header: linear-gradient(135deg, #6366f1, #4f46e5);
+  --cal-weekday: #dcfce7;
+  --cal-recorded: #22c55e;
+  --cal-today: #fbbf24;
+  --cal-weekend: #f8fafc;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -111,53 +116,147 @@ body {
 }
 .page-title i { color: var(--primary); }
 
-/* ── STAT CARDS ──────────────────────── */
-.card-stat {
-  border-radius: var(--radius);
-  padding: 1.25rem;
+/* ── TURMA CARDS (HOME) ─────────────── */
+.turma-card-inicio {
   background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
   box-shadow: var(--shadow);
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  transition: transform .15s ease, box-shadow .15s ease;
+  cursor: pointer;
+  transition: all .2s ease;
+  text-align: center;
+  border: 2px solid transparent;
 }
-.card-stat:hover {
-  transform: translateY(-2px);
+.turma-card-inicio:hover {
+  transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
+  border-color: var(--primary-light);
 }
-.card-stat-icon {
-  width: 48px; height: 48px;
-  border-radius: 12px;
+.turma-card-inicio .turma-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.3rem;
+  font-size: 1.8rem;
   color: #fff;
-  flex-shrink: 0;
+  margin: 0 auto 12px;
+  background: var(--cal-header);
 }
-.card-stat-blue .card-stat-icon { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.card-stat-green .card-stat-icon { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.card-stat-purple .card-stat-icon { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-.card-stat-orange .card-stat-icon { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.card-stat-value { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
-.card-stat-label { font-size: .8rem; color: var(--text-muted); }
+.turma-card-inicio h4 {
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin-bottom: 4px;
+  color: var(--primary-dark);
+}
+.turma-card-inicio .alunos-count {
+  color: var(--text-muted);
+  font-size: .85rem;
+}
 
-/* ── CHART CARDS ─────────────────────── */
-.chart-card {
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  padding: 1.25rem;
-  box-shadow: var(--shadow);
-  height: 100%;
+/* ── CALENDÁRIO ANUAL ────────────────── */
+.calendario-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
 }
-.chart-title {
+.calendario-mes {
+  background: var(--bg-card);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.calendario-mes-header {
+  background: var(--cal-header);
+  color: white;
+  text-align: center;
+  padding: 8px 6px;
   font-weight: 600;
   font-size: .85rem;
-  color: var(--text-muted);
+  letter-spacing: .3px;
+}
+.calendario-mes table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.calendario-mes thead th {
+  background: #ede9fe;
+  color: var(--primary-dark);
+  padding: 4px 2px;
+  text-align: center;
+  font-size: .65rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .5px;
-  margin-bottom: .75rem;
+}
+.calendario-mes tbody td {
+  text-align: center;
+  padding: 3px 2px;
+  font-size: .75rem;
+  border: 1px solid #f0f0f0;
+  height: 26px;
+  min-width: 26px;
+  cursor: default;
+  transition: background .15s;
+}
+.dia-util {
+  background: var(--cal-weekday);
+  cursor: pointer;
+}
+.dia-util:hover {
+  background: #86efac;
+}
+.dia-registrado {
+  background: var(--cal-recorded) !important;
+  color: white !important;
+  font-weight: 700;
+}
+.dia-registrado:hover {
+  background: #16a34a !important;
+}
+.dia-hoje {
+  box-shadow: inset 0 0 0 2px var(--cal-today);
+  font-weight: 700;
+}
+.dia-fds {
+  background: var(--cal-weekend);
+  color: #6366f1;
+  font-weight: 500;
+}
+
+/* ── LEGENDA CALENDÁRIO ──────────────── */
+.calendario-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: .8rem;
+  color: var(--text-muted);
+}
+.legenda-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.legenda-cor {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.bg-dia-letivo { background: #dcfce7; border: 1px solid #86efac; }
+.bg-dia-registrado { background: #22c55e; }
+.bg-dia-hoje { background: #fff; box-shadow: inset 0 0 0 2px #fbbf24; }
+.bg-dia-fds { background: #f8fafc; border: 1px solid #e2e8f0; }
+
+/* ── CHAMADA / FREQUÊNCIA ────────────── */
+.chamada-check {
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  accent-color: var(--success);
+}
+.chamada-row-ausente {
+  background: #fef2f2 !important;
 }
 
 /* ── TABLES ──────────────────────────── */
@@ -182,7 +281,24 @@ body {
   box-shadow: var(--shadow);
 }
 
-/* ── TURMA GRID ──────────────────────── */
+/* ── CHART CARDS ─────────────────────── */
+.chart-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+  height: 100%;
+}
+.chart-title {
+  font-weight: 600;
+  font-size: .85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: .75rem;
+}
+
+/* ── TURMA GRID (MANAGE) ────────────── */
 .turma-card {
   background: var(--bg-card);
   border-radius: var(--radius);
@@ -229,13 +345,6 @@ body {
   font-size: .85rem;
 }
 
-/* ── FREQUENCY CHECKBOX ──────────────── */
-.freq-check {
-  width: 24px; height: 24px;
-  cursor: pointer;
-  accent-color: var(--success);
-}
-
 /* ── REPORT CARDS ────────────────────── */
 .report-freq-bar {
   height: 8px;
@@ -278,6 +387,11 @@ body {
 }
 
 /* ── RESPONSIVE ──────────────────────── */
+@media (max-width: 992px) {
+  .calendario-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
 @media (max-width: 768px) {
   .sidebar {
     transform: translateX(-100%);
@@ -290,6 +404,13 @@ body {
     width: 100%;
     padding: 1rem;
   }
-  .card-stat-value { font-size: 1.2rem; }
+  .calendario-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
   .aluno-info-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .calendario-grid {
+    grid-template-columns: 1fr;
+  }
 }
