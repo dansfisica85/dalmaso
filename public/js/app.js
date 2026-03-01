@@ -734,4 +734,163 @@ document.getElementById('btn-importar')?.addEventListener('click', async () => {
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
   navigateTo('inicio');
+  initIA();
 });
+
+// ============================================================
+// ASSISTENTE IA (Chat Flutuante)
+// ============================================================
+let iaHistorico = [];
+let iaCarregando = false;
+
+function initIA() {
+  const fab = document.getElementById('ia-fab');
+  const panel = document.getElementById('ia-panel');
+  const closeBtn = document.getElementById('ia-close');
+  const input = document.getElementById('ia-input');
+  const enviarBtn = document.getElementById('ia-enviar');
+
+  if (!fab || !panel) return;
+
+  fab.addEventListener('click', () => {
+    const isOpen = panel.style.display !== 'none';
+    panel.style.display = isOpen ? 'none' : 'flex';
+    fab.classList.toggle('ia-fab-active', !isOpen);
+    if (!isOpen) input.focus();
+  });
+
+  closeBtn.addEventListener('click', () => {
+    panel.style.display = 'none';
+    fab.classList.remove('ia-fab-active');
+  });
+
+  enviarBtn.addEventListener('click', () => iaEnviarMensagem());
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      iaEnviarMensagem();
+    }
+  });
+
+  // Botões de ação rápida
+  document.querySelectorAll('.ia-quick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      if (action === 'analisar') {
+        iaAnalisarFrequencia();
+      } else if (action === 'criticos') {
+        iaEnviarTexto('Quais alunos estão em situação crítica de frequência? Liste todos com menos de 75% de presença.');
+      }
+    });
+  });
+}
+
+function iaAdicionarMsg(conteudo, tipo) {
+  const container = document.getElementById('ia-mensagens');
+  const div = document.createElement('div');
+  div.className = `ia-msg ia-msg-${tipo}`;
+
+  if (tipo === 'bot' && typeof marked !== 'undefined') {
+    div.innerHTML = marked.parse(conteudo);
+  } else {
+    div.textContent = conteudo;
+  }
+
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function iaAdicionarCarregando() {
+  const container = document.getElementById('ia-mensagens');
+  const div = document.createElement('div');
+  div.className = 'ia-msg ia-msg-bot ia-loading';
+  div.innerHTML = '<span class="ia-dots"><span>.</span><span>.</span><span>.</span></span> Pensando...';
+  div.id = 'ia-loading-msg';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function iaRemoverCarregando() {
+  const el = document.getElementById('ia-loading-msg');
+  if (el) el.remove();
+}
+
+async function iaEnviarMensagem() {
+  const input = document.getElementById('ia-input');
+  const msg = input.value.trim();
+  if (!msg || iaCarregando) return;
+  input.value = '';
+  iaEnviarTexto(msg);
+}
+
+async function iaEnviarTexto(msg) {
+  if (iaCarregando) return;
+
+  iaAdicionarMsg(msg, 'user');
+  iaHistorico.push({ role: 'user', content: msg });
+
+  iaCarregando = true;
+  iaAdicionarCarregando();
+
+  try {
+    const data = await fetch('/api/ia/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mensagem: msg,
+        historico: iaHistorico.slice(-10),
+      }),
+    }).then(r => r.json());
+
+    iaRemoverCarregando();
+
+    if (data.erro) {
+      iaAdicionarMsg('Erro: ' + data.erro, 'bot');
+    } else {
+      iaAdicionarMsg(data.resposta, 'bot');
+      iaHistorico.push({ role: 'assistant', content: data.resposta });
+    }
+  } catch (err) {
+    iaRemoverCarregando();
+    iaAdicionarMsg('Erro de conexão. Tente novamente.', 'bot');
+  } finally {
+    iaCarregando = false;
+  }
+}
+
+async function iaAnalisarFrequencia() {
+  if (!turmaAtual) {
+    iaAdicionarMsg('Selecione uma turma primeiro (clique em uma turma na tela Início).', 'bot');
+    return;
+  }
+
+  iaAdicionarMsg(`Analisar frequência da turma ${turmaAtual.nome}`, 'user');
+  iaCarregando = true;
+  iaAdicionarCarregando();
+
+  try {
+    const data = await fetch('/api/ia/analisar-frequencia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        turma_id: turmaAtual.id,
+        mes: mesAtual(),
+      }),
+    }).then(r => r.json());
+
+    iaRemoverCarregando();
+
+    if (data.erro) {
+      iaAdicionarMsg('Erro: ' + data.erro, 'bot');
+    } else {
+      iaAdicionarMsg(data.analise, 'bot');
+      iaHistorico.push({ role: 'assistant', content: data.analise });
+    }
+  } catch (err) {
+    iaRemoverCarregando();
+    iaAdicionarMsg('Erro de conexão. Tente novamente.', 'bot');
+  } finally {
+    iaCarregando = false;
+  }
+}
