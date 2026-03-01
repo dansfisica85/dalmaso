@@ -28,12 +28,21 @@ app = Flask(__name__)
 CORS(app)
 
 _dir = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.normpath(os.path.join(_dir, '..', 'public'))
-if not os.path.isdir(STATIC_DIR):
-    STATIC_DIR = os.path.join(os.getcwd(), 'public')
-if not os.path.isdir(STATIC_DIR):
-    # Vercel pode colocar os arquivos junto com a função
-    STATIC_DIR = os.path.join(_dir, 'public')
+
+# Encontrar pasta public/ — testar vários caminhos possíveis na Vercel
+STATIC_DIR = None
+for _candidate in [
+    os.path.normpath(os.path.join(_dir, '..', 'public')),
+    os.path.join(os.getcwd(), 'public'),
+    os.path.join(_dir, 'public'),
+    '/var/task/public',
+    '/var/task/api/public',
+]:
+    if os.path.isdir(_candidate):
+        STATIC_DIR = _candidate
+        break
+if STATIC_DIR is None:
+    STATIC_DIR = os.path.normpath(os.path.join(_dir, '..', 'public'))
 
 # ============================================================
 # CONEXÃO COM O BANCO
@@ -1015,6 +1024,27 @@ def health():
     static_exists = os.path.isdir(STATIC_DIR)
     index_exists = os.path.isfile(os.path.join(STATIC_DIR, 'index.html'))
 
+    # Listar arquivos para debug
+    try:
+        if static_exists:
+            dir_contents = os.listdir(STATIC_DIR)
+        else:
+            dir_contents = []
+    except Exception:
+        dir_contents = []
+
+    # Listar cwd para debug
+    try:
+        cwd_contents = os.listdir(os.getcwd())
+    except Exception:
+        cwd_contents = []
+
+    # Listar _dir parent para debug
+    try:
+        parent_contents = os.listdir(os.path.normpath(os.path.join(_dir, '..')))
+    except Exception:
+        parent_contents = []
+
     return jsonify({
         'status': 'ok' if db_ok else 'erro_db',
         'db': 'turso' if USE_TURSO else 'sqlite_local',
@@ -1024,6 +1054,9 @@ def health():
         'index_exists': index_exists,
         'cwd': os.getcwd(),
         'api_dir': _dir,
+        'dir_contents': dir_contents,
+        'cwd_contents': cwd_contents,
+        'parent_contents': parent_contents,
     })
 
 
