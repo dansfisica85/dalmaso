@@ -1,323 +1,265 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dalmaso - Busca Ativa</title>
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DALMASO — Gestão Escolar</title>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <!-- CSS customizado -->
+  <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <nav class="sidebar" id="sidebar">
+
+<!-- SIDEBAR -->
+<div class="d-flex" id="wrapper">
+  <nav id="sidebar" class="sidebar">
     <div class="sidebar-header">
-      <h2><i class="fas fa-school"></i> Dalmaso</h2>
-      <span class="subtitle">Busca Ativa</span>
+      <i class="bi bi-mortarboard-fill"></i>
+      <span>DALMASO</span>
     </div>
-    <ul class="nav-menu">
-      <li class="nav-item active" data-page="dashboard">
-        <i class="fas fa-home"></i> <span>Início</span>
+    <ul class="sidebar-nav">
+      <li class="active" data-page="dashboard">
+        <i class="bi bi-speedometer2"></i> <span>Dashboard</span>
       </li>
-      <li class="nav-item" data-page="turmas">
-        <i class="fas fa-users-rectangle"></i> <span>Turmas</span>
+      <li data-page="alunos">
+        <i class="bi bi-people-fill"></i> <span>Alunos</span>
       </li>
-      <li class="nav-item" data-page="alunos">
-        <i class="fas fa-user-graduate"></i> <span>Alunos</span>
+      <li data-page="frequencia">
+        <i class="bi bi-calendar-check-fill"></i> <span>Frequência</span>
       </li>
-      <li class="nav-item" data-page="chamada">
-        <i class="fas fa-clipboard-check"></i> <span>Chamada</span>
+      <li data-page="relatorios">
+        <i class="bi bi-graph-up"></i> <span>Relatórios</span>
       </li>
-      <li class="nav-item" data-page="relatorios">
-        <i class="fas fa-chart-bar"></i> <span>Relatórios</span>
+      <li data-page="importar">
+        <i class="bi bi-cloud-upload-fill"></i> <span>Importar Dados</span>
       </li>
-      <li class="nav-item" data-page="upload">
-        <i class="fas fa-file-upload"></i> <span>Importar CSV</span>
+      <li data-page="turmas">
+        <i class="bi bi-collection-fill"></i> <span>Turmas</span>
       </li>
     </ul>
+    <div class="sidebar-footer">
+      <small>Gestão Escolar v2.0</small>
+    </div>
   </nav>
 
-  <main class="main-content">
-    <header class="top-bar">
-      <button class="menu-toggle" id="menuToggle">
-        <i class="fas fa-bars"></i>
-      </button>
-      <h1 id="pageTitle">Início</h1>
-    </header>
-
-    <div class="content-area">
-      <!-- DASHBOARD -->
-      <section class="page active" id="page-dashboard">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <i class="fas fa-users-rectangle"></i>
-            <div>
-              <span class="stat-number" id="statTurmas">0</span>
-              <span class="stat-label">Turmas</span>
-            </div>
-          </div>
-          <div class="stat-card">
-            <i class="fas fa-user-graduate"></i>
-            <div>
-              <span class="stat-number" id="statAlunos">0</span>
-              <span class="stat-label">Alunos</span>
-            </div>
-          </div>
-          <div class="stat-card">
-            <i class="fas fa-calendar-check"></i>
-            <div>
-              <span class="stat-number" id="statChamadasHoje">0</span>
-              <span class="stat-label">Chamadas Hoje</span>
-            </div>
-          </div>
-          <div class="stat-card">
-            <i class="fas fa-percentage"></i>
-            <div>
-              <span class="stat-number" id="statFrequencia">-</span>
-              <span class="stat-label">Frequência Geral</span>
-            </div>
+  <!-- CONTEÚDO PRINCIPAL -->
+  <main id="main-content" class="main-content">
+    <button class="btn btn-sm btn-outline-secondary d-md-none mb-3" id="btnToggleSidebar">
+      <i class="bi bi-list"></i>
+    </button>
+    <!-- DASHBOARD -->
+    <section id="page-dashboard" class="page active">
+      <h2 class="page-title"><i class="bi bi-speedometer2"></i> Dashboard</h2>
+      <div class="row g-3 mb-4" id="cards-resumo">
+        <div class="col-6 col-lg-3">
+          <div class="card-stat card-stat-blue">
+            <div class="card-stat-icon"><i class="bi bi-people-fill"></i></div>
+            <div class="card-stat-value" id="stat-alunos">0</div>
+            <div class="card-stat-label">Alunos</div>
           </div>
         </div>
-        <div class="card">
-          <h3>Bem-vindo ao Sistema Dalmaso - Busca Ativa</h3>
-          <p>Gerencie turmas, alunos e controle de frequência escolar.</p>
-          <ul style="margin-top: 1rem; line-height: 2;">
-            <li><strong>Turmas:</strong> Cadastre e gerencie turmas</li>
-            <li><strong>Alunos:</strong> Cadastre, edite e exclua alunos</li>
-            <li><strong>Chamada:</strong> Faça a chamada diária por turma e dia da semana</li>
-            <li><strong>Relatórios:</strong> Visualize frequência dos alunos</li>
-            <li><strong>Importar CSV:</strong> Importe turmas inteiras via arquivo CSV/XLSX</li>
-          </ul>
-        </div>
-      </section>
-
-      <!-- TURMAS -->
-      <section class="page" id="page-turmas">
-        <div class="card">
-          <div class="card-header">
-            <h3>Gerenciar Turmas</h3>
-          </div>
-          <form id="formTurma" class="inline-form">
-            <input type="text" id="turmaNome" placeholder="Nome da turma (ex: 6A)" required>
-            <input type="text" id="turmaDescricao" placeholder="Descrição (opcional)">
-            <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Adicionar</button>
-          </form>
-          <table class="data-table" id="tabelaTurmas">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Nome</th>
-                <th>Descrição</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ALUNOS -->
-      <section class="page" id="page-alunos">
-        <div class="card">
-          <div class="card-header">
-            <h3>Gerenciar Alunos</h3>
-            <div class="header-actions">
-              <select id="filtroTurmaAluno" class="select-input">
-                <option value="">Todas as turmas</option>
-              </select>
-              <button class="btn btn-success" id="btnExportarAlunos"><i class="fas fa-download"></i> Exportar CSV</button>
-            </div>
-          </div>
-
-          <!-- Modal/Form para cadastro -->
-          <div class="form-card" id="formAlunoContainer">
-            <h4 id="formAlunoTitle">Cadastrar Aluno</h4>
-            <form id="formAluno" class="form-grid">
-              <input type="hidden" id="alunoId">
-              <div class="form-group">
-                <label for="alunoNome">Nome completo *</label>
-                <input type="text" id="alunoNome" required placeholder="Nome do aluno">
-              </div>
-              <div class="form-group">
-                <label for="alunoMatricula">Matrícula</label>
-                <input type="text" id="alunoMatricula" placeholder="Número de matrícula">
-              </div>
-              <div class="form-group">
-                <label for="alunoTurma">Turma *</label>
-                <select id="alunoTurma" required class="select-input">
-                  <option value="">Selecione...</option>
-                </select>
-              </div>
-              <div class="form-actions">
-                <button type="submit" class="btn btn-primary" id="btnSalvarAluno">
-                  <i class="fas fa-save"></i> Salvar
-                </button>
-                <button type="button" class="btn btn-secondary" id="btnCancelarAluno">
-                  <i class="fas fa-times"></i> Cancelar
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <button class="btn btn-primary" id="btnNovoAluno" style="margin-bottom: 1rem;">
-            <i class="fas fa-plus"></i> Novo Aluno
-          </button>
-
-          <table class="data-table" id="tabelaAlunos">
-            <thead>
-              <tr>
-                <th>Nome</th>
-                <th>Matrícula</th>
-                <th>Turma</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- CHAMADA -->
-      <section class="page" id="page-chamada">
-        <div class="card">
-          <div class="card-header">
-            <h3>Fazer Chamada</h3>
-          </div>
-
-          <div class="chamada-config">
-            <div class="form-group">
-              <label for="chamadaTurma">Turma *</label>
-              <select id="chamadaTurma" required class="select-input">
-                <option value="">Selecione a turma...</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="chamadaData">Data *</label>
-              <input type="date" id="chamadaData" required>
-            </div>
-            <div class="form-group">
-              <label>Dia da Semana</label>
-              <div class="dias-semana" id="diasSemana">
-                <button type="button" class="dia-btn" data-dia="Segunda">Seg</button>
-                <button type="button" class="dia-btn" data-dia="Terça">Ter</button>
-                <button type="button" class="dia-btn" data-dia="Quarta">Qua</button>
-                <button type="button" class="dia-btn" data-dia="Quinta">Qui</button>
-                <button type="button" class="dia-btn" data-dia="Sexta">Sex</button>
-                <button type="button" class="dia-btn" data-dia="Sábado">Sáb</button>
-              </div>
-            </div>
-            <button class="btn btn-primary" id="btnCarregarChamada">
-              <i class="fas fa-list"></i> Carregar Alunos
-            </button>
-          </div>
-
-          <div id="chamadaListaContainer" style="display:none;">
-            <div class="chamada-actions">
-              <button class="btn btn-success btn-sm" id="btnTodosPresentes">
-                <i class="fas fa-check-double"></i> Todos Presentes
-              </button>
-              <button class="btn btn-danger btn-sm" id="btnTodosFaltaram">
-                <i class="fas fa-times"></i> Todos Faltaram
-              </button>
-            </div>
-
-            <div class="chamada-lista" id="chamadaLista"></div>
-
-            <button class="btn btn-primary btn-lg" id="btnSalvarChamada">
-              <i class="fas fa-save"></i> Salvar Chamada
-            </button>
+        <div class="col-6 col-lg-3">
+          <div class="card-stat card-stat-green">
+            <div class="card-stat-icon"><i class="bi bi-collection-fill"></i></div>
+            <div class="card-stat-value" id="stat-turmas">0</div>
+            <div class="card-stat-label">Turmas</div>
           </div>
         </div>
-      </section>
-
-      <!-- RELATÓRIOS -->
-      <section class="page" id="page-relatorios">
-        <div class="card">
-          <div class="card-header">
-            <h3>Relatórios de Frequência</h3>
-            <div class="header-actions">
-              <select id="relatorioTurma" class="select-input">
-                <option value="">Todas as turmas</option>
-              </select>
-              <select id="relatorioMes" class="select-input">
-                <option value="">Todos os meses</option>
-                <option value="01">Janeiro</option>
-                <option value="02">Fevereiro</option>
-                <option value="03">Março</option>
-                <option value="04">Abril</option>
-                <option value="05">Maio</option>
-                <option value="06">Junho</option>
-                <option value="07">Julho</option>
-                <option value="08">Agosto</option>
-                <option value="09">Setembro</option>
-                <option value="10">Outubro</option>
-                <option value="11">Novembro</option>
-                <option value="12">Dezembro</option>
-              </select>
-              <input type="number" id="relatorioAno" class="select-input" placeholder="Ano" value="2026" min="2020" max="2030" style="width: 100px;">
-              <button class="btn btn-primary" id="btnGerarRelatorio">
-                <i class="fas fa-search"></i> Buscar
-              </button>
-              <button class="btn btn-success" id="btnExportarFrequencia">
-                <i class="fas fa-download"></i> Exportar
-              </button>
-            </div>
-          </div>
-
-          <table class="data-table" id="tabelaRelatorio">
-            <thead>
-              <tr>
-                <th>Aluno</th>
-                <th>Turma</th>
-                <th>Data</th>
-                <th>Dia</th>
-                <th>Status</th>
-                <th>Observação</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- UPLOAD -->
-      <section class="page" id="page-upload">
-        <div class="card">
-          <div class="card-header">
-            <h3>Importar Alunos via CSV/XLSX</h3>
-          </div>
-          <div class="upload-area">
-            <div class="upload-info">
-              <i class="fas fa-info-circle"></i>
-              <p>O arquivo deve ter pelo menos uma coluna com o nome do aluno. 
-                 Colunas reconhecidas automaticamente: <strong>nome/aluno</strong>, <strong>matricula/ra</strong>.</p>
-              <p>Formatos aceitos: <strong>.csv</strong> e <strong>.xlsx</strong></p>
-            </div>
-            <form id="formUpload" class="upload-form">
-              <div class="form-group">
-                <label for="uploadTurma">Turma de destino *</label>
-                <select id="uploadTurma" required class="select-input">
-                  <option value="">Selecione a turma...</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="uploadArquivo">Arquivo CSV ou XLSX *</label>
-                <div class="file-input-wrapper">
-                  <input type="file" id="uploadArquivo" accept=".csv,.xlsx,.xls" required>
-                </div>
-              </div>
-              <button type="submit" class="btn btn-primary btn-lg">
-                <i class="fas fa-upload"></i> Importar Alunos
-              </button>
-            </form>
-            <div id="uploadResultado" class="upload-resultado" style="display:none;"></div>
+        <div class="col-6 col-lg-3">
+          <div class="card-stat card-stat-purple">
+            <div class="card-stat-icon"><i class="bi bi-calendar-check"></i></div>
+            <div class="card-stat-value" id="stat-freq">0%</div>
+            <div class="card-stat-label">Frequência Geral</div>
           </div>
         </div>
-      </section>
-    </div>
+        <div class="col-6 col-lg-3">
+          <div class="card-stat card-stat-orange">
+            <div class="card-stat-icon"><i class="bi bi-clipboard-data"></i></div>
+            <div class="card-stat-value" id="stat-registros">0</div>
+            <div class="card-stat-label">Registros Freq.</div>
+          </div>
+        </div>
+      </div>
+      <div class="row g-3 mb-4">
+        <div class="col-md-8"><div class="chart-card"><h6 class="chart-title">Alunos por Turma</h6><div id="chart-por-turma"></div></div></div>
+        <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Distribuição por Sexo</h6><div id="chart-por-sexo"></div></div></div>
+      </div>
+      <div class="row g-3 mb-4">
+        <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Raça / Cor</h6><div id="chart-por-raca"></div></div></div>
+        <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Faixa Etária</h6><div id="chart-por-idade"></div></div></div>
+        <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Bolsa Família</h6><div id="chart-bolsa"></div></div></div>
+      </div>
+      <div class="row g-3 mb-4">
+        <div class="col-md-6"><div class="chart-card"><h6 class="chart-title">Indicadores Sociais</h6><div id="chart-indicadores"></div></div></div>
+        <div class="col-md-6"><div class="chart-card"><h6 class="chart-title">Frequência ao Longo do Tempo</h6><div id="chart-freq-tempo"></div></div></div>
+      </div>
+      <div class="row g-3 mb-4">
+        <div class="col-12"><div class="chart-card"><h6 class="chart-title">Frequência por Turma (%)</h6><div id="chart-freq-turma"></div></div></div>
+      </div>
+    </section>
+
+    <!-- ALUNOS -->
+    <section id="page-alunos" class="page">
+      <h2 class="page-title"><i class="bi bi-people-fill"></i> Alunos</h2>
+      <div class="row mb-3">
+        <div class="col-md-4">
+          <select class="form-select" id="filtro-turma-alunos"><option value="">Todas as turmas</option></select>
+        </div>
+        <div class="col-md-4">
+          <input type="text" class="form-control" id="busca-alunos" placeholder="Buscar por nome, RA ou CPF..." />
+        </div>
+        <div class="col-md-4 text-end">
+          <button class="btn btn-primary" id="btn-novo-aluno"><i class="bi bi-plus-circle"></i> Novo Aluno</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover" id="tabela-alunos">
+          <thead><tr><th>Nº</th><th>Nome</th><th>RA</th><th>Turma</th><th>Nascimento</th><th>Sexo</th><th>Ações</th></tr></thead>
+          <tbody id="corpo-tabela-alunos"></tbody>
+        </table>
+      </div>
+      <div id="alunos-vazio" class="text-center text-muted py-5" style="display:none;">
+        <i class="bi bi-inbox" style="font-size:3rem;"></i>
+        <p class="mt-2">Nenhum aluno encontrado. Importe dados ou adicione manualmente.</p>
+      </div>
+    </section>
+
+    <!-- DETALHE DO ALUNO -->
+    <section id="page-aluno-detalhe" class="page">
+      <button class="btn btn-outline-secondary btn-sm mb-3" id="btn-voltar-alunos"><i class="bi bi-arrow-left"></i> Voltar</button>
+      <div id="aluno-detalhe-conteudo"></div>
+    </section>
+
+    <!-- FREQUÊNCIA -->
+    <section id="page-frequencia" class="page">
+      <h2 class="page-title"><i class="bi bi-calendar-check-fill"></i> Frequência</h2>
+      <div class="row mb-3">
+        <div class="col-md-4"><label class="form-label">Turma</label><select class="form-select" id="freq-turma"></select></div>
+        <div class="col-md-3"><label class="form-label">Data</label><input type="date" class="form-control" id="freq-data" /></div>
+        <div class="col-md-3 d-flex align-items-end">
+          <button class="btn btn-primary me-2" id="btn-carregar-freq"><i class="bi bi-search"></i> Carregar</button>
+          <button class="btn btn-success" id="btn-salvar-freq" disabled><i class="bi bi-check-circle"></i> Salvar</button>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-outline-secondary" id="btn-marcar-todos" title="Marcar todos presentes"><i class="bi bi-check-all"></i> Todos</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover" id="tabela-freq" style="display:none;">
+          <thead><tr><th style="width:50px;">Nº</th><th>Nome</th><th>RA</th><th style="width:100px;" class="text-center">Presente</th><th>Observação</th></tr></thead>
+          <tbody id="corpo-tabela-freq"></tbody>
+        </table>
+      </div>
+      <div id="freq-vazio" class="text-center text-muted py-5">
+        <i class="bi bi-calendar3" style="font-size:3rem;"></i>
+        <p class="mt-2">Selecione uma turma e data para registrar frequência.</p>
+      </div>
+    </section>
+
+    <!-- RELATÓRIOS -->
+    <section id="page-relatorios" class="page">
+      <h2 class="page-title"><i class="bi bi-graph-up"></i> Relatórios</h2>
+      <div class="row mb-3">
+        <div class="col-md-4"><label class="form-label">Turma</label><select class="form-select" id="rel-turma"></select></div>
+        <div class="col-md-3"><label class="form-label">Mês</label><input type="month" class="form-control" id="rel-mes" /></div>
+        <div class="col-md-3"><label class="form-label">Tipo</label>
+          <select class="form-select" id="rel-tipo">
+            <option value="frequencia">Frequência Mensal</option>
+            <option value="perfil">Perfil da Turma</option>
+          </select>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-primary" id="btn-gerar-relatorio"><i class="bi bi-bar-chart-fill"></i> Gerar</button>
+        </div>
+      </div>
+      <div id="relatorio-conteudo"></div>
+    </section>
+
+    <!-- IMPORTAR -->
+    <section id="page-importar" class="page">
+      <h2 class="page-title"><i class="bi bi-cloud-upload-fill"></i> Importar Dados</h2>
+      <div class="card p-4" style="max-width:600px;">
+        <p class="text-muted mb-3">
+          Importe dados de alunos a partir de um arquivo Excel (.xlsx) ou CSV (.csv)
+          gerado pela extensão Chrome do SED.
+        </p>
+        <div class="mb-3"><label class="form-label">Arquivo</label>
+          <input type="file" class="form-control" id="input-arquivo" accept=".xlsx,.xls,.csv" /></div>
+        <button class="btn btn-primary" id="btn-importar"><i class="bi bi-upload"></i> Importar</button>
+        <div id="importar-progresso" class="mt-3" style="display:none;">
+          <div class="progress"><div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width:100%"></div></div>
+          <small class="text-muted mt-1">Processando arquivo...</small>
+        </div>
+        <div id="importar-resultado" class="mt-3"></div>
+      </div>
+    </section>
+
+    <!-- TURMAS -->
+    <section id="page-turmas" class="page">
+      <h2 class="page-title"><i class="bi bi-collection-fill"></i> Turmas</h2>
+      <div class="row mb-3">
+        <div class="col-md-4">
+          <div class="input-group">
+            <input type="text" class="form-control" id="input-nova-turma" placeholder="Nome da turma (ex: 6A)" />
+            <button class="btn btn-primary" id="btn-criar-turma"><i class="bi bi-plus"></i> Criar</button>
+          </div>
+        </div>
+      </div>
+      <div class="row g-3" id="grid-turmas"></div>
+    </section>
+
   </main>
+</div>
 
-  <!-- Toast notification -->
-  <div class="toast-container" id="toastContainer"></div>
+<!-- MODAL: ALUNO -->
+<div class="modal fade" id="modalAluno" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAlunoTitulo">Novo Aluno</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="form-aluno">
+          <input type="hidden" id="aluno-id" />
+          <div class="row g-3">
+            <div class="col-md-8"><label class="form-label">Nome *</label><input type="text" class="form-control" id="aluno-nome" required /></div>
+            <div class="col-md-4"><label class="form-label">Turma</label><select class="form-select" id="aluno-turma"></select></div>
+            <div class="col-md-3"><label class="form-label">RA</label><input type="text" class="form-control" id="aluno-ra" /></div>
+            <div class="col-md-3"><label class="form-label">Data de Nascimento</label><input type="text" class="form-control" id="aluno-nascimento" placeholder="dd/mm/aaaa" /></div>
+            <div class="col-md-3"><label class="form-label">Sexo</label>
+              <select class="form-select" id="aluno-sexo"><option value="">Selecione</option><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option></select></div>
+            <div class="col-md-3"><label class="form-label">Raça/Cor</label>
+              <select class="form-select" id="aluno-raca"><option value="">Selecione</option><option value="Branca">Branca</option><option value="Preta">Preta</option><option value="Parda">Parda</option><option value="Amarela">Amarela</option><option value="Indígena">Indígena</option><option value="Não declarada">Não declarada</option></select></div>
+            <div class="col-md-4"><label class="form-label">CPF</label><input type="text" class="form-control" id="aluno-cpf" /></div>
+            <div class="col-md-4"><label class="form-label">Filiação 1</label><input type="text" class="form-control" id="aluno-filiacao1" /></div>
+            <div class="col-md-4"><label class="form-label">Filiação 2</label><input type="text" class="form-control" id="aluno-filiacao2" /></div>
+            <div class="col-md-4"><label class="form-label">Telefones</label><input type="text" class="form-control" id="aluno-telefones" /></div>
+            <div class="col-md-4"><label class="form-label">E-Mail</label><input type="email" class="form-control" id="aluno-email" /></div>
+            <div class="col-md-4"><label class="form-label">CEP</label><input type="text" class="form-control" id="aluno-cep" /></div>
+            <div class="col-md-8"><label class="form-label">Endereço</label><input type="text" class="form-control" id="aluno-endereco" /></div>
+            <div class="col-md-4"><label class="form-label">Bairro</label><input type="text" class="form-control" id="aluno-bairro" /></div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btn-salvar-aluno"><i class="bi bi-check-circle"></i> Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-  <script src="js/app.js"></script>
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- App JS -->
+<script src="/js/app.js"></script>
 </body>
 </html>
