@@ -124,32 +124,51 @@
   // LER CAMPOS DA PÁGINA (usa document inteiro)
   // ========================
 
+  // Verifica se o texto do label corresponde ao texto procurado
+  // Para termos curtos (<=3 chars), exige match EXATO
+  // Para termos longos, usa includes
+  function labelMatch(labelClean, searchText) {
+    const labelLower = labelClean.toLowerCase();
+    const searchLower = searchText.toLowerCase();
+    // Para termos <= 3 chars (como "RA", "CPF", "NIS", "CEP"), exigir match exato
+    if (searchText.length <= 3) {
+      return labelLower === searchLower;
+    }
+    return labelLower.includes(searchLower);
+  }
+
+  // Extrai o valor de um input/select que está associado a um label
+  function extrairValorDeGrupo(group, lbl) {
+    if (!group) return '';
+    const inputs = group.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea');
+    for (const el of inputs) {
+      if (el.tagName === 'SELECT') {
+        const opt = el.options[el.selectedIndex];
+        const val = opt ? opt.textContent.trim() : '';
+        if (val) return val;
+      }
+      if (el.value) return el.value;
+    }
+    // Tentar span com valor
+    const spans = group.querySelectorAll('span, p, div');
+    for (const s of spans) {
+      if (s === lbl || s.contains(lbl) || lbl.contains(s)) continue;
+      if (s.querySelectorAll('label, strong, input, select').length > 0) continue;
+      if (s.children.length === 0 && s.textContent.trim()) return s.textContent.trim();
+    }
+    return '';
+  }
+
   function lerCampoPorLabel(labelText) {
     const labels = document.querySelectorAll('label, strong, th, dt, .control-label, .field-label');
     for (const lbl of labels) {
       const text = lbl.textContent.trim().replace(/:$/, '').replace(/\?$/, '').trim();
-      if (!text.toLowerCase().includes(labelText.toLowerCase())) continue;
+      if (!labelMatch(text, labelText)) continue;
 
       // Tentar input dentro do form-group pai
       const group = lbl.closest('.form-group, .control-group, tr, .row, dd, div') || lbl.parentElement;
-      if (group) {
-        const inputs = group.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea');
-        for (const el of inputs) {
-          if (el.tagName === 'SELECT') {
-            const opt = el.options[el.selectedIndex];
-            const val = opt ? opt.textContent.trim() : '';
-            if (val) return val;
-          }
-          if (el.value) return el.value;
-        }
-        // Tentar span com valor
-        const spans = group.querySelectorAll('span, p, div');
-        for (const s of spans) {
-          if (s === lbl || s.contains(lbl) || lbl.contains(s)) continue;
-          if (s.querySelectorAll('label, strong, input, select').length > 0) continue;
-          if (s.children.length === 0 && s.textContent.trim()) return s.textContent.trim();
-        }
-      }
+      const val = extrairValorDeGrupo(group, lbl);
+      if (val) return val;
 
       // Próximo elemento irmão
       let next = lbl.nextElementSibling;
@@ -163,19 +182,147 @@
           return input.value || '';
         }
         if (next.textContent) {
-          const val = next.textContent.trim();
-          if (val && val !== text && val.length < 200) return val;
+          const nextVal = next.textContent.trim();
+          if (nextVal && nextVal !== text && nextVal.length < 200) return nextVal;
         }
       }
     }
     return '';
   }
 
+  // Busca por ID de input (nome do campo no SED pode ter atributos id/name)
+  function lerCampoPorId(idPattern) {
+    const inputs = document.querySelectorAll('input, select, textarea');
+    for (const inp of inputs) {
+      const id = (inp.id || inp.name || '').toLowerCase();
+      if (id.includes(idPattern.toLowerCase())) {
+        if (inp.tagName === 'SELECT') {
+          const opt = inp.options[inp.selectedIndex];
+          return opt ? opt.textContent.trim() : '';
+        }
+        return inp.value || '';
+      }
+    }
+    return '';
+  }
+
+  // ======================
+  // EXTRAÇÃO ESPECÍFICA: RA
+  // ======================
+  // Múltiplas estratégias porque "RA" é um termo curto e difícil de buscar
+  function extrairRA() {
+    const allText = document.body.innerText || '';
+    let raNum = '', raDig = '', raUf = '';
+
+    // Estratégia 1: Regex no cabeçalho "Dados do Aluno: NOME - RA:000122759213-9/SP"
+    const patterns = [
+      /RA\s*:\s*(\d{6,15})\s*[-–]\s*(\d)\s*\/\s*(\w{2})/i,
+      /RA\s*:\s*(\d{6,15})\s*[-–]\s*(\d)\s*[-–]\s*(\w{2})/i,
+      /RA\s*(\d{6,15})\s*[-–]\s*(\d)\s*\/\s*(\w{2})/i,
+      /RA\s*:\s*(\d{6,15})/i,
+    ];
+    for (const pat of patterns) {
+      const m = allText.match(pat);
+      if (m) {
+        raNum = m[1];
+        raDig = m[2] || '';
+        raUf = m[3] || '';
+        break;
+      }
+    }
+
+    // Estratégia 2: Input com id/name contendo "ra" ou "nrRa" ou "cdAluno"
+    if (!raNum) {
+      raNum = lerCampoPorId('nrra') || lerCampoPorId('cdra') || lerCampoPorId('cdaluno');
+    }
+    if (!raDig) {
+      raDig = lerCampoPorId('digra') || lerCampoPorId('nrdigra');
+    }
+    if (!raUf) {
+      raUf = lerCampoPorId('ufra') || lerCampoPorId('sgufra');
+    }
+
+    // Estratégia 3: Label exato "RA" no formulário
+    if (!raNum) {
+      raNum = lerCampoPorLabel('RA');
+    }
+
+    // Estratégia 4: Procurar qualquer input readonly com valor que pareça RA (9-12 dígitos)
+    if (!raNum) {
+      const readonlyInputs = document.querySelectorAll('input[readonly], input[disabled]');
+      for (const inp of readonlyInputs) {
+        if (/^\d{9,15}$/.test(inp.value.trim())) {
+          raNum = inp.value.trim();
+          sendLog(`  RA encontrado via input readonly: ${raNum}`, 'debug');
+          break;
+        }
+      }
+    }
+
+    sendLog(`  RA extraído: ${raNum}-${raDig}/${raUf}`, 'debug');
+    return { raNum, raDig, raUf };
+  }
+
+  // =====================================
+  // EXTRAÇÃO ESPECÍFICA: DATA DE NASCIMENTO
+  // =====================================
+  function extrairDataNascimento() {
+    const allText = document.body.innerText || '';
+    let dataNasc = '';
+
+    // Estratégia 1: Regex no cabeçalho "Data Nascimento: dd/mm/aaaa" ou "Data de Nascimento: dd/mm/aaaa"
+    const patterns = [
+      /Data\s+(?:de\s+)?Nascimento\s*:\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /Nascimento\s*:\s*(\d{2}\/\d{2}\/\d{4})/i,
+    ];
+    for (const pat of patterns) {
+      const m = allText.match(pat);
+      if (m) {
+        dataNasc = m[1];
+        break;
+      }
+    }
+
+    // Estratégia 2: Input com id/name contendo "datanasc" ou "dtnascimento"
+    if (!dataNasc) {
+      dataNasc = lerCampoPorId('datanasc') || lerCampoPorId('dtnascimento') || lerCampoPorId('dtnascaluno');
+    }
+
+    // Estratégia 3: Label "Data de Nascimento" no formulário
+    if (!dataNasc) {
+      dataNasc = lerCampoPorLabel('Data de Nascimento');
+    }
+
+    // Estratégia 4: Procurar qualquer input readonly com valor no formato dd/mm/aaaa
+    // próximo a um label que contenha "nascimento"
+    if (!dataNasc) {
+      const labels = document.querySelectorAll('label');
+      for (const lbl of labels) {
+        if (lbl.textContent.toLowerCase().includes('nascimento')) {
+          const group = lbl.closest('.form-group, .control-group, .row, div') || lbl.parentElement;
+          if (group) {
+            const inputs = group.querySelectorAll('input');
+            for (const inp of inputs) {
+              if (/^\d{2}\/\d{2}\/\d{4}$/.test(inp.value.trim())) {
+                dataNasc = inp.value.trim();
+                break;
+              }
+            }
+          }
+          if (dataNasc) break;
+        }
+      }
+    }
+
+    sendLog(`  Data de Nascimento extraída: ${dataNasc}`, 'debug');
+    return dataNasc;
+  }
+
   function lerCheckboxPorLabel(labelText) {
     const labels = document.querySelectorAll('label, strong');
     for (const lbl of labels) {
       const text = lbl.textContent.trim().replace(/:$/, '').replace(/\?$/, '').trim();
-      if (!text.toLowerCase().includes(labelText.toLowerCase())) continue;
+      if (!labelMatch(text, labelText)) continue;
 
       const group = lbl.closest('.form-group, .control-group, tr, div, .checkbox') || lbl.parentElement;
       if (group) {
@@ -196,7 +343,7 @@
     const labels = document.querySelectorAll('label, strong');
     for (const lbl of labels) {
       const text = lbl.textContent.trim().replace(/:$/, '').replace(/\?$/, '').trim();
-      if (!text.toLowerCase().includes(labelText.toLowerCase())) continue;
+      if (!labelMatch(text, labelText)) continue;
 
       const group = lbl.closest('.form-group, .control-group, tr, div') || lbl.parentElement;
       if (group) {
@@ -319,7 +466,8 @@
       lerCheckboxPorLabel('transtorno') ? 'Sim' : 'Não';
     d['Tipo Sanguíneo'] = lerCampoPorLabel('Tipo Sangu');
     d['Idade Mínima Especial'] = lerCheckboxPorLabel('Idade Mínima') ? 'Sim' : 'Não';
-    d['Data de Nascimento'] = lerCampoPorLabel('Data de Nascimento');
+    // Data de Nascimento — extração dedicada com múltiplas estratégias
+    d['Data de Nascimento'] = extrairDataNascimento();
     d['Falecimento'] = lerCheckboxPorLabel('Falecimento') ? 'Sim' : 'Não';
     d['Refugiado'] = lerCheckboxPorLabel('Refugiado') ? 'Sim' : 'Não';
     d['Emancipado'] = lerCheckboxPorLabel('Emancipado') ? 'Sim' : 'Não';
@@ -335,18 +483,11 @@
     d['Filiação 2'] = lerCampoPorLabel('Filiação 2');
     d['Participa do Programa Bolsa Família'] = lerCheckboxPorLabel('Bolsa Família') ? 'Sim' : 'Não';
 
-    // RA — extrair do cabeçalho: "Dados do Aluno: NOME - RA:000122759213-9/SP ..."
-    let raNum = '', raDig = '', raUf = '';
-    const raMatch = allText.match(/RA[:\s]*(\d{9,15})[- ]*(\d)\/(\w{2})/i);
-    if (raMatch) {
-      raNum = raMatch[1];
-      raDig = raMatch[2];
-      raUf = raMatch[3];
-    }
-    if (!raNum) raNum = lerCampoPorLabel('RA');
-    d['RA'] = raNum;
-    d['nrDigRa'] = raDig;
-    d['sgUfRa'] = raUf;
+    // RA — extração dedicada com múltiplas estratégias
+    const raInfo = extrairRA();
+    d['RA'] = raInfo.raNum;
+    d['nrDigRa'] = raInfo.raDig;
+    d['sgUfRa'] = raInfo.raUf;
 
     d['Identificação Única - Educacenso'] = lerCampoPorLabel('Educacenso') || lerCampoPorLabel('Identificação Única');
     d['Nacionalidade'] = lerCampoPorLabel('Nacionalidade');
@@ -530,12 +671,17 @@
   // ========================
 
   function montarLinhaCSV(serieAno, numero, dadosLista, d, telefonesStr) {
+    // Usar dados extraídos da ficha, ou fallback para dados coletados da tabela
     const nome = d['Nome'] || dadosLista.nome;
     const dataNasc = d['Data de Nascimento'] || dadosLista.dataNasc;
     const raNum = d['RA'] || dadosLista.ra;
     const raDig = d['nrDigRa'] || dadosLista.digRa;
     const raUf = d['sgUfRa'] || dadosLista.ufRa || 'SP';
     const filiacao1 = d['Filiação 1'] || dadosLista.filiacao1;
+
+    // Log para debug de campos críticos
+    if (!d['RA'] && dadosLista.ra) sendLog(`    Usando RA da tabela: ${dadosLista.ra}`, 'debug');
+    if (!d['Data de Nascimento'] && dadosLista.dataNasc) sendLog(`    Usando Data Nasc da tabela: ${dadosLista.dataNasc}`, 'debug');
 
     let idade = '';
     if (dataNasc) {
