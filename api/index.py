@@ -29,7 +29,7 @@ app = Flask(__name__)
 CORS(app)
 
 _dir = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.normpath(os.path.join(_dir, '..', 'public'))
+STATIC_DIR = os.path.normpath(os.path.join(_dir, '..'))
 
 # ============================================================
 # CONEXÃO COM O BANCO
