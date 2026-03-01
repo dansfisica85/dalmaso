@@ -757,11 +757,20 @@ def importar_arquivo():
         if nome_arquivo.endswith('.xlsx') or nome_arquivo.endswith('.xls'):
             df = pd.read_excel(io.BytesIO(file_bytes), engine='openpyxl')
         elif nome_arquivo.endswith('.csv'):
-            # Tenta detectar o separador
-            try:
-                df = pd.read_csv(io.BytesIO(file_bytes), sep=';', encoding='utf-8-sig')
-            except Exception:
-                df = pd.read_csv(io.BytesIO(file_bytes), sep=',', encoding='utf-8-sig')
+            # Tenta detectar separador e encoding
+            for enc in ('utf-8-sig', 'latin-1', 'cp1252'):
+                for sep in (';', ','):
+                    try:
+                        df = pd.read_csv(io.BytesIO(file_bytes), sep=sep, encoding=enc)
+                        if len(df.columns) > 1:
+                            break
+                        df = None
+                    except Exception:
+                        df = None
+                if df is not None and len(df.columns) > 1:
+                    break
+            if df is None:
+                return jsonify({'erro': 'Não foi possível ler o CSV'}), 400
         else:
             return jsonify({'erro': 'Formato não suportado. Use .xlsx, .xls ou .csv'}), 400
 
