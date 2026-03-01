@@ -5,7 +5,10 @@
 
 // ── Estado ──────────────────────────────────────────────────
 let turmasCache = [];
-let alunosCache = [];
+let turmaAtual = null;
+let anoCalendario = new Date().getFullYear();
+let freqCalendario = {};
+let dataChamadaAtual = '';
 
 // ── Utilidades ──────────────────────────────────────────────
 function hoje() {
@@ -73,9 +76,8 @@ function navigateTo(pageId) {
 
   // Carregar dados da página
   switch (pageId) {
-    case 'dashboard': loadDashboard(); break;
+    case 'inicio': loadInicio(); break;
     case 'alunos': loadAlunos(); break;
-    case 'frequencia': initFrequencia(); break;
     case 'relatorios': initRelatorios(); break;
     case 'turmas': loadTurmas(); break;
     case 'importar': break;
@@ -91,7 +93,211 @@ if (btnToggle) {
 }
 
 // ============================================================
-// TURMAS
+// INÍCIO (Grid de turmas → clique abre Calendário)
+// ============================================================
+async function loadInicio() {
+  try {
+    turmasCache = await api('/api/turmas');
+    const grid = document.getElementById('grid-inicio');
+    const vazio = document.getElementById('inicio-vazio');
+
+    if (!turmasCache.length) {
+      grid.innerHTML = '';
+      if (vazio) vazio.style.display = 'block';
+      return;
+    }
+    if (vazio) vazio.style.display = 'none';
+
+    grid.innerHTML = turmasCache.map(t => `
+      <div class="col-md-4 col-lg-3">
+        <div class="turma-card" style="cursor:pointer;" onclick="abrirCalendario(${t.id}, '${t.nome.replace(/'/g, "\\'")}')">
+          <h5 class="mb-2">${t.nome}</h5>
+          <span class="badge bg-primary">${t.total_alunos || 0} alunos</span>
+          <p class="text-muted small mt-2 mb-0">${t.descricao || ''}</p>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) { console.error(err); }
+}
+
+// ============================================================
+// CALENDÁRIO
+// ============================================================
+window.abrirCalendario = async function(turmaId, turmaNome) {
+  turmaAtual = { id: turmaId, nome: turmaNome };
+  anoCalendario = new Date().getFullYear();
+  document.getElementById('titulo-calendario').textContent = turmaNome;
+  document.getElementById('label-ano').textContent = anoCalendario;
+
+  allPages.forEach(p => p.classList.remove('active'));
+  sidebarNav.forEach(li => li.classList.remove('active'));
+  document.getElementById('page-calendario').classList.add('active');
+
+  await carregarFreqCalendario();
+  renderCalendario();
+};
+
+async function carregarFreqCalendario() {
+  try {
+    const data = await api(`/api/frequencia/calendario?turma_id=${turmaAtual.id}&ano=${anoCalendario}`);
+    freqCalendario = data.datas || {};
+  } catch (err) {
+    freqCalendario = {};
+  }
+}
+
+function renderCalendario() {
+  const container = document.getElementById('container-calendario');
+  container.innerHTML = gerarCalendarioHTML(anoCalendario, freqCalendario);
+}
+
+function gerarCalendarioHTML(ano, dadosFreq) {
+  const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const hojeStr = new Date().toISOString().split('T')[0];
+  let html = '<div class="calendario-grid">';
+  for (let m = 0; m < 12; m++) {
+    const firstDay = new Date(ano, m, 1).getDay();
+    const daysInMonth = new Date(ano, m + 1, 0).getDate();
+    html += '<div class="calendario-mes">';
+    html += `<div class="calendario-mes-header">${MESES[m]}</div>`;
+    html += '<table><thead><tr><th>Dom</th><th>Seg</th><th>Ter</th><th>Qua</th><th>Qui</th><th>Sex</th><th>Sáb</th></tr></thead><tbody><tr>';
+    for (let i = 0; i < firstDay; i++) html += '<td></td>';
+    let dow = firstDay;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${ano}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isWeekend = dow === 0 || dow === 6;
+      const hasData = dadosFreq[dateStr];
+      let cls = isWeekend ? 'dia-fds' : 'dia-util';
+      if (hasData) cls += ' dia-registrado';
+      if (dateStr === hojeStr) cls += ' dia-hoje';
+      if (!isWeekend) {
+        html += `<td class="${cls}" onclick="abrirChamada('${dateStr}')">${d}</td>`;
+      } else {
+        html += `<td class="${cls}">${d}</td>`;
+      }
+      dow++;
+      if (dow > 6) {
+        if (d < daysInMonth) html += '</tr><tr>';
+        dow = 0;
+      }
+    }
+    while (dow > 0 && dow <= 6) { html += '<td></td>'; dow++; }
+    html += '</tr></tbody></table></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+document.getElementById('btn-ano-anterior')?.addEventListener('click', async () => {
+  anoCalendario--;
+  document.getElementById('label-ano').textContent = anoCalendario;
+  await carregarFreqCalendario();
+  renderCalendario();
+});
+
+document.getElementById('btn-ano-proximo')?.addEventListener('click', async () => {
+  anoCalendario++;
+  document.getElementById('label-ano').textContent = anoCalendario;
+  await carregarFreqCalendario();
+  renderCalendario();
+});
+
+document.getElementById('btn-voltar-inicio')?.addEventListener('click', () => {
+  navigateTo('inicio');
+});
+
+// ============================================================
+// CHAMADA
+// ============================================================
+window.abrirChamada = async function(dateStr) {
+  dataChamadaAtual = dateStr;
+  if (!turmaAtual) return;
+
+  document.getElementById('badge-turma-chamada').textContent = turmaAtual.nome;
+  document.getElementById('badge-data-chamada').textContent = dateStr;
+
+  allPages.forEach(p => p.classList.remove('active'));
+  sidebarNav.forEach(li => li.classList.remove('active'));
+  document.getElementById('page-chamada').classList.add('active');
+
+  try {
+    const alunos = await api(`/api/alunos?turma_id=${turmaAtual.id}`);
+    if (!alunos.length) {
+      document.getElementById('corpo-tabela-chamada').innerHTML =
+        '<tr><td colspan="4" class="text-center text-muted py-4">Nenhum aluno nesta turma.</td></tr>';
+      return;
+    }
+
+    let freqExist = [];
+    try { freqExist = await api(`/api/frequencia?turma_id=${turmaAtual.id}&data=${dateStr}`); } catch (e) {}
+    const freqMap = {};
+    freqExist.forEach(f => { freqMap[f.aluno_id] = f; });
+
+    const tbody = document.getElementById('corpo-tabela-chamada');
+    tbody.innerHTML = alunos.map((a, i) => {
+      const ex = freqMap[a.id];
+      const checked = ex ? (ex.presente === 1) : true;
+      const rowClass = checked ? '' : ' chamada-row-ausente';
+      return `<tr class="${rowClass}">
+        <td>${i + 1}</td>
+        <td>${a.nome}</td>
+        <td>${a.ra || '-'}</td>
+        <td class="text-center">
+          <input type="checkbox" class="chamada-check" data-aluno-id="${a.id}" ${checked ? 'checked' : ''} />
+        </td>
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('.chamada-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        cb.closest('tr').classList.toggle('chamada-row-ausente', !cb.checked);
+      });
+    });
+  } catch (err) { console.error(err); }
+};
+
+document.getElementById('btn-marcar-todos')?.addEventListener('click', () => {
+  document.querySelectorAll('.chamada-check').forEach(cb => {
+    cb.checked = true;
+    cb.closest('tr').classList.remove('chamada-row-ausente');
+  });
+});
+
+document.getElementById('btn-desmarcar-todos')?.addEventListener('click', () => {
+  document.querySelectorAll('.chamada-check').forEach(cb => {
+    cb.checked = false;
+    cb.closest('tr').classList.add('chamada-row-ausente');
+  });
+});
+
+document.getElementById('btn-salvar-chamada')?.addEventListener('click', async () => {
+  if (!turmaAtual || !dataChamadaAtual) return;
+  const checks = document.querySelectorAll('.chamada-check');
+  const registros = Array.from(checks).map(cb => ({
+    aluno_id: parseInt(cb.dataset.alunoId),
+    presente: cb.checked,
+    observacao: '',
+  }));
+
+  try {
+    await api('/api/frequencia', {
+      method: 'POST',
+      body: JSON.stringify({ turma_id: turmaAtual.id, data: dataChamadaAtual, registros }),
+    });
+    const p = registros.filter(r => r.presente).length;
+    toast(`Frequência salva! ${p} presentes, ${registros.length - p} faltas.`);
+    await carregarFreqCalendario();
+  } catch (err) {}
+});
+
+document.getElementById('btn-voltar-calendario')?.addEventListener('click', () => {
+  allPages.forEach(p => p.classList.remove('active'));
+  document.getElementById('page-calendario').classList.add('active');
+  renderCalendario();
+});
+
+// ============================================================
+// TURMAS (CRUD)
 // ============================================================
 async function loadTurmas() {
   try {
@@ -132,7 +338,7 @@ document.getElementById('btn-criar-turma')?.addEventListener('click', async () =
   } catch (err) {}
 });
 
-async function deletarTurma(id, nome) {
+window.deletarTurma = async function(id, nome) {
   if (!confirm(`Excluir turma "${nome}" e todos seus alunos?`)) return;
   try {
     await api(`/api/turmas/${id}`, { method: 'DELETE' });
@@ -141,14 +347,14 @@ async function deletarTurma(id, nome) {
     loadTurmas();
     popularSelects();
   } catch (err) {}
-}
+};
 
 // ── Popular Selects de Turma ──
 async function popularSelects() {
   if (!turmasCache.length) {
     try { turmasCache = await api('/api/turmas'); } catch (e) { return; }
   }
-  const selects = ['filtro-turma-alunos', 'freq-turma', 'rel-turma', 'aluno-turma'];
+  const selects = ['filtro-turma-alunos', 'rel-turma', 'aluno-turma'];
   selects.forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
@@ -175,18 +381,18 @@ async function loadAlunos() {
   if (busca) url += `busca=${encodeURIComponent(busca)}&`;
 
   try {
-    alunosCache = await api(url);
+    const alunos = await api(url);
     const tbody = document.getElementById('corpo-tabela-alunos');
     const vazio = document.getElementById('alunos-vazio');
 
-    if (!alunosCache.length) {
+    if (!alunos.length) {
       tbody.innerHTML = '';
-      vazio.style.display = 'block';
+      if (vazio) vazio.style.display = 'block';
       return;
     }
-    vazio.style.display = 'none';
+    if (vazio) vazio.style.display = 'none';
 
-    tbody.innerHTML = alunosCache.map((a, i) => {
+    tbody.innerHTML = alunos.map((a, i) => {
       const turma = turmasCache.find(t => t.id === a.turma_id);
       return `<tr style="cursor:pointer;" onclick="verAluno(${a.id})">
         <td>${i + 1}</td>
@@ -213,7 +419,7 @@ document.getElementById('busca-alunos')?.addEventListener('input', () => {
 });
 
 // Ver detalhe
-async function verAluno(id) {
+window.verAluno = async function(id) {
   try {
     const a = await api(`/api/alunos/${id}`);
     const div = document.getElementById('aluno-detalhe-conteudo');
@@ -264,7 +470,7 @@ async function verAluno(id) {
     allPages.forEach(p => p.classList.remove('active'));
     document.getElementById('page-aluno-detalhe').classList.add('active');
   } catch (err) { console.error(err); }
-}
+};
 
 document.getElementById('btn-voltar-alunos')?.addEventListener('click', () => {
   allPages.forEach(p => p.classList.remove('active'));
@@ -272,14 +478,15 @@ document.getElementById('btn-voltar-alunos')?.addEventListener('click', () => {
 });
 
 // ── Modal Aluno (Criar / Editar) ──
-const modalAluno = new bootstrap.Modal(document.getElementById('modalAluno'));
+let modalAluno;
 
 document.getElementById('btn-novo-aluno')?.addEventListener('click', () => {
   abrirModalAluno(null);
 });
 
-async function abrirModalAluno(id) {
+window.abrirModalAluno = async function(id) {
   await popularSelects();
+  if (!modalAluno) modalAluno = new bootstrap.Modal(document.getElementById('modalAluno'));
   document.getElementById('form-aluno').reset();
   document.getElementById('aluno-id').value = '';
 
@@ -307,7 +514,7 @@ async function abrirModalAluno(id) {
     document.getElementById('modalAlunoTitulo').textContent = 'Novo Aluno';
   }
   modalAluno.show();
-}
+};
 
 document.getElementById('btn-salvar-aluno')?.addEventListener('click', async () => {
   const id = document.getElementById('aluno-id').value;
@@ -339,12 +546,12 @@ document.getElementById('btn-salvar-aluno')?.addEventListener('click', async () 
       await api('/api/alunos', { method: 'POST', body: JSON.stringify(payload) });
       toast('Aluno cadastrado!');
     }
-    modalAluno.hide();
+    if (modalAluno) modalAluno.hide();
     loadAlunos();
   } catch (err) {}
 });
 
-async function deletarAluno(id, nome) {
+window.deletarAluno = async function(id, nome) {
   if (!confirm(`Excluir aluno "${nome}"?`)) return;
   try {
     await api(`/api/alunos/${id}`, { method: 'DELETE' });
@@ -352,77 +559,7 @@ async function deletarAluno(id, nome) {
     loadAlunos();
     navigateTo('alunos');
   } catch (err) {}
-}
-
-// ============================================================
-// FREQUÊNCIA
-// ============================================================
-function initFrequencia() {
-  popularSelects();
-  document.getElementById('freq-data').value = hoje();
-}
-
-document.getElementById('btn-carregar-freq')?.addEventListener('click', async () => {
-  const turmaId = document.getElementById('freq-turma').value;
-  const data = document.getElementById('freq-data').value;
-  if (!turmaId || !data) { toast('Selecione turma e data', 'error'); return; }
-
-  try {
-    const alunos = await api(`/api/alunos?turma_id=${turmaId}`);
-    if (!alunos.length) { toast('Nenhum aluno nesta turma', 'error'); return; }
-
-    // Buscar frequência existente
-    let freqExist = [];
-    try { freqExist = await api(`/api/frequencia?turma_id=${turmaId}&data=${data}`); } catch (e) {}
-    const freqMap = {};
-    freqExist.forEach(f => { freqMap[f.aluno_id] = f; });
-
-    const tbody = document.getElementById('corpo-tabela-freq');
-    tbody.innerHTML = alunos.map((a, i) => {
-      const ex = freqMap[a.id];
-      const checked = ex ? (ex.presente === 1) : true;
-      const obs = ex ? (ex.observacao || '') : '';
-      return `<tr>
-        <td>${i + 1}</td>
-        <td>${a.nome}</td>
-        <td>${a.ra || '-'}</td>
-        <td class="text-center">
-          <input type="checkbox" class="freq-check" data-aluno-id="${a.id}" ${checked ? 'checked' : ''} />
-        </td>
-        <td><input type="text" class="form-control form-control-sm freq-obs" data-aluno-id="${a.id}" value="${obs}" placeholder="Obs..." /></td>
-      </tr>`;
-    }).join('');
-
-    document.getElementById('tabela-freq').style.display = 'table';
-    document.getElementById('freq-vazio').style.display = 'none';
-    document.getElementById('btn-salvar-freq').disabled = false;
-  } catch (err) { console.error(err); }
-});
-
-document.getElementById('btn-marcar-todos')?.addEventListener('click', () => {
-  document.querySelectorAll('.freq-check').forEach(cb => { cb.checked = true; });
-});
-
-document.getElementById('btn-salvar-freq')?.addEventListener('click', async () => {
-  const turmaId = document.getElementById('freq-turma').value;
-  const data = document.getElementById('freq-data').value;
-  const checks = document.querySelectorAll('.freq-check');
-
-  const registros = Array.from(checks).map(cb => ({
-    aluno_id: parseInt(cb.dataset.alunoId),
-    presente: cb.checked,
-    observacao: document.querySelector(`.freq-obs[data-aluno-id="${cb.dataset.alunoId}"]`)?.value || '',
-  }));
-
-  try {
-    await api('/api/frequencia', {
-      method: 'POST',
-      body: JSON.stringify({ turma_id: parseInt(turmaId), data, registros }),
-    });
-    const p = registros.filter(r => r.presente).length;
-    toast(`Frequência salva! ${p} presentes, ${registros.length - p} faltas.`);
-  } catch (err) {}
-});
+};
 
 // ============================================================
 // RELATÓRIOS
@@ -500,7 +637,7 @@ function renderRelFrequencia(div, data) {
     yaxis: { range: [0, 100], title: '%' },
     margin: { t: 40, b: 100 },
     height: 350,
-  }, { responsive: true });
+  }, { responsive: true, displayModeBar: false });
 }
 
 function renderRelPerfil(div, data) {
@@ -511,10 +648,10 @@ function renderRelPerfil(div, data) {
       <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Raça/Cor</h6><div id="chart-rel-raca"></div></div></div>
       <div class="col-md-4"><div class="chart-card"><h6 class="chart-title">Indicadores</h6><div id="chart-rel-ind"></div></div></div>
     </div>
-    ${data.idades.length ? '<div class="chart-card mt-3"><h6 class="chart-title">Distribuição de Idade</h6><div id="chart-rel-idade"></div></div>' : ''}
+    ${data.idades && data.idades.length ? '<div class="chart-card mt-3"><h6 class="chart-title">Distribuição de Idade</h6><div id="chart-rel-idade"></div></div>' : ''}
   `;
 
-  const plotCfg = { responsive: true };
+  const plotCfg = { responsive: true, displayModeBar: false };
   const layoutBase = { margin: { t: 10, b: 30, l: 30, r: 10 }, height: 280, showlegend: true };
 
   // Sexo
@@ -542,7 +679,7 @@ function renderRelPerfil(div, data) {
   }], { ...layoutBase, height: 280, margin: { t: 10, b: 80, l: 40, r: 10 } }, plotCfg);
 
   // Idades
-  if (data.idades.length) {
+  if (data.idades && data.idades.length) {
     Plotly.newPlot('chart-rel-idade', [{
       x: data.idades,
       type: 'histogram',
