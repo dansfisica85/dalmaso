@@ -28,9 +28,12 @@ app = Flask(__name__)
 CORS(app)
 
 _dir = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(_dir, '..', 'public')
+STATIC_DIR = os.path.normpath(os.path.join(_dir, '..', 'public'))
 if not os.path.isdir(STATIC_DIR):
     STATIC_DIR = os.path.join(os.getcwd(), 'public')
+if not os.path.isdir(STATIC_DIR):
+    # Vercel pode colocar os arquivos junto com a função
+    STATIC_DIR = os.path.join(_dir, 'public')
 
 # ============================================================
 # CONEXÃO COM O BANCO
@@ -1006,30 +1009,39 @@ def health():
     try:
         rows = query("SELECT 1 AS ok")
         db_ok = bool(rows)
-    except Exception:
+    except Exception as e:
         db_ok = False
+
+    static_exists = os.path.isdir(STATIC_DIR)
+    index_exists = os.path.isfile(os.path.join(STATIC_DIR, 'index.html'))
+
     return jsonify({
         'status': 'ok' if db_ok else 'erro_db',
         'db': 'turso' if USE_TURSO else 'sqlite_local',
         'timestamp': datetime.now().isoformat(),
+        'static_dir': STATIC_DIR,
+        'static_exists': static_exists,
+        'index_exists': index_exists,
+        'cwd': os.getcwd(),
+        'api_dir': _dir,
     })
 
 
 # ============================================================
-# SERVIR ARQUIVOS ESTÁTICOS (apenas dev local — Vercel usa filesystem)
+# SERVIR ARQUIVOS ESTÁTICOS
 # ============================================================
 
-if os.environ.get('VERCEL') is None:
-    @app.route('/')
-    def serve_index():
-        return send_from_directory(STATIC_DIR, 'index.html')
+@app.route('/')
+def serve_index():
+    return send_from_directory(STATIC_DIR, 'index.html')
 
-    @app.route('/<path:filepath>')
-    def serve_static(filepath):
-        try:
-            return send_from_directory(STATIC_DIR, filepath)
-        except Exception:
-            return send_from_directory(STATIC_DIR, 'index.html')
+
+@app.route('/<path:filepath>')
+def serve_static(filepath):
+    try:
+        return send_from_directory(STATIC_DIR, filepath)
+    except Exception:
+        return send_from_directory(STATIC_DIR, 'index.html')
 
 
 # ============================================================
