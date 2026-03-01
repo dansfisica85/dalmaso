@@ -1016,20 +1016,20 @@ def health():
 
 
 # ============================================================
-# SERVIR ARQUIVOS ESTÁTICOS (SPA)
+# SERVIR ARQUIVOS ESTÁTICOS (apenas dev local — Vercel usa filesystem)
 # ============================================================
 
-@app.route('/')
-def serve_index():
-    return send_from_directory(STATIC_DIR, 'index.html')
-
-
-@app.route('/<path:filepath>')
-def serve_static(filepath):
-    try:
-        return send_from_directory(STATIC_DIR, filepath)
-    except Exception:
+if os.environ.get('VERCEL') is None:
+    @app.route('/')
+    def serve_index():
         return send_from_directory(STATIC_DIR, 'index.html')
+
+    @app.route('/<path:filepath>')
+    def serve_static(filepath):
+        try:
+            return send_from_directory(STATIC_DIR, filepath)
+        except Exception:
+            return send_from_directory(STATIC_DIR, 'index.html')
 
 
 # ============================================================
