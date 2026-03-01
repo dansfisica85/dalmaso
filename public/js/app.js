@@ -224,7 +224,7 @@ window.abrirChamada = async function(dateStr) {
     const alunos = await api(`/api/alunos?turma_id=${turmaAtual.id}`);
     if (!alunos.length) {
       document.getElementById('corpo-tabela-chamada').innerHTML =
-        '<tr><td colspan="4" class="text-center text-muted py-4">Nenhum aluno nesta turma.</td></tr>';
+        '<tr><td colspan="5" class="text-center text-muted py-4">Nenhum aluno nesta turma.</td></tr>';
       return;
     }
 
@@ -238,6 +238,7 @@ window.abrirChamada = async function(dateStr) {
       const ex = freqMap[a.id];
       const checked = ex ? (ex.presente === 1) : true;
       const rowClass = checked ? '' : ' chamada-row-ausente';
+      const obs = ex ? (ex.observacao || '') : '';
       return `<tr class="${rowClass}">
         <td>${i + 1}</td>
         <td>${a.nome}</td>
@@ -245,6 +246,7 @@ window.abrirChamada = async function(dateStr) {
         <td class="text-center">
           <input type="checkbox" class="chamada-check" data-aluno-id="${a.id}" ${checked ? 'checked' : ''} />
         </td>
+        <td><input type="text" class="form-control form-control-sm chamada-obs" data-aluno-id="${a.id}" value="${obs}" placeholder="" /></td>
       </tr>`;
     }).join('');
 
@@ -273,11 +275,14 @@ document.getElementById('btn-desmarcar-todos')?.addEventListener('click', () => 
 document.getElementById('btn-salvar-chamada')?.addEventListener('click', async () => {
   if (!turmaAtual || !dataChamadaAtual) return;
   const checks = document.querySelectorAll('.chamada-check');
-  const registros = Array.from(checks).map(cb => ({
-    aluno_id: parseInt(cb.dataset.alunoId),
-    presente: cb.checked,
-    observacao: '',
-  }));
+  const registros = Array.from(checks).map(cb => {
+    const obsInput = document.querySelector(`.chamada-obs[data-aluno-id="${cb.dataset.alunoId}"]`);
+    return {
+      aluno_id: parseInt(cb.dataset.alunoId),
+      presente: cb.checked,
+      observacao: obsInput ? obsInput.value.trim() : '',
+    };
+  });
 
   try {
     await api('/api/frequencia', {
