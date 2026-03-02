@@ -10,8 +10,10 @@ import os
 import io
 import json
 import math
+import csv
+import re
 import httpx
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 
@@ -1346,6 +1348,269 @@ ALL_TURMAS_ORDENADAS = (
     PERIODOS['manha'] + PERIODOS['tarde'] + PERIODOS['noite']
 )
 
+# ============================================================
+# CALENDÁRIO PEDAGÓGICO 2026 — Estado de São Paulo (SEDUC-SP)
+# ============================================================
+
+CALENDARIO_PEDAGOGICO_2026 = {
+    "ano": 2026,
+    "inicio_aulas": "2026-02-02",
+    "fim_aulas": "2026-12-17",
+    "total_dias_letivos": 200,
+    "bimestres": [
+        {"bimestre": 1, "inicio": "2026-02-02", "fim": "2026-04-22", "dias_letivos": 55},
+        {"bimestre": 2, "inicio": "2026-04-23", "fim": "2026-07-09", "dias_letivos": 50},
+        {"bimestre": 3, "inicio": "2026-07-24", "fim": "2026-10-02", "dias_letivos": 50},
+        {"bimestre": 4, "inicio": "2026-10-05", "fim": "2026-12-17", "dias_letivos": 45},
+    ],
+    "feriados": [
+        {"data": "2026-01-01", "descricao": "Confraternização Universal"},
+        {"data": "2026-01-25", "descricao": "Aniversário de São Paulo"},
+        {"data": "2026-02-16", "descricao": "Carnaval (Ponto Facultativo)"},
+        {"data": "2026-02-17", "descricao": "Carnaval"},
+        {"data": "2026-02-18", "descricao": "Quarta-feira de Cinzas (Ponto Facultativo)"},
+        {"data": "2026-04-02", "descricao": "Paixão de Cristo"},
+        {"data": "2026-04-21", "descricao": "Tiradentes"},
+        {"data": "2026-05-01", "descricao": "Dia do Trabalho"},
+        {"data": "2026-06-04", "descricao": "Corpus Christi"},
+        {"data": "2026-06-05", "descricao": "Ponto Facultativo (Corpus Christi)"},
+        {"data": "2026-09-07", "descricao": "Independência do Brasil"},
+        {"data": "2026-10-12", "descricao": "Nossa Senhora Aparecida / Dia das Crianças"},
+        {"data": "2026-11-02", "descricao": "Finados"},
+        {"data": "2026-11-15", "descricao": "Proclamação da República"},
+        {"data": "2026-11-20", "descricao": "Dia da Consciência Negra"},
+        {"data": "2026-12-25", "descricao": "Natal"},
+    ],
+    "recessos": [
+        {"inicio": "2026-01-01", "fim": "2026-01-31", "descricao": "Recesso/Planejamento de Janeiro"},
+        {"inicio": "2026-07-10", "fim": "2026-07-23", "descricao": "Recesso Escolar de Julho"},
+        {"inicio": "2026-12-18", "fim": "2026-12-31", "descricao": "Recesso de Dezembro"},
+    ],
+    "avaliacoes": [
+        {"inicio": "2026-03-16", "fim": "2026-03-27", "descricao": "AAP 1 — Avaliação de Aprendizagem em Processo", "bimestre": 1},
+        {"inicio": "2026-05-18", "fim": "2026-05-29", "descricao": "AAP 2 — Avaliação de Aprendizagem em Processo", "bimestre": 2},
+        {"inicio": "2026-08-17", "fim": "2026-08-28", "descricao": "AAP 3 — Avaliação de Aprendizagem em Processo", "bimestre": 3},
+        {"inicio": "2026-10-19", "fim": "2026-10-30", "descricao": "AAP 4 — Avaliação de Aprendizagem em Processo", "bimestre": 4},
+    ],
+    "conselhos": [
+        {"inicio": "2026-04-20", "fim": "2026-04-22", "descricao": "Conselho de Classe/Série — 1º Bimestre"},
+        {"inicio": "2026-07-07", "fim": "2026-07-09", "descricao": "Conselho de Classe/Série — 2º Bimestre"},
+        {"inicio": "2026-09-30", "fim": "2026-10-02", "descricao": "Conselho de Classe/Série — 3º Bimestre"},
+        {"inicio": "2026-12-15", "fim": "2026-12-17", "descricao": "Conselho de Classe/Série — 4º Bimestre"},
+    ],
+    "reunioes_pais": [
+        {"data": "2026-02-06", "descricao": "Reunião de Pais e Mestres — Acolhimento"},
+        {"data": "2026-05-08", "descricao": "Reunião de Pais e Mestres — 1º Bimestre"},
+        {"data": "2026-08-07", "descricao": "Reunião de Pais e Mestres — 2º Bimestre"},
+        {"data": "2026-10-16", "descricao": "Reunião de Pais e Mestres — 3º Bimestre"},
+    ],
+    "replanejamentos": [
+        {"data": "2026-02-02", "descricao": "Planejamento Escolar — Início do Ano"},
+        {"data": "2026-07-24", "descricao": "Replanejamento — Início do 2º Semestre"},
+    ],
+    "olimpiadas": [
+        {"inicio": "2026-03-02", "fim": "2026-03-13", "descricao": "Olimpíada Brasileira de Matemática (OBMEP) — 1ª Fase"},
+        {"inicio": "2026-06-01", "fim": "2026-06-12", "descricao": "Olimpíada de Língua Portuguesa"},
+        {"inicio": "2026-09-14", "fim": "2026-09-25", "descricao": "OBMEP — 2ª Fase"},
+    ],
+    "provao_paulista": [
+        {"inicio": "2026-10-26", "fim": "2026-11-06", "descricao": "Provão Paulista — Fase Única (3ª Série)"},
+    ],
+}
+
+# ============================================================
+# DADOS CSV — Frequência até 28/02/2026
+# ============================================================
+
+CSV_FREQ_PATH = os.path.join(STATIC_DIR, 'FREQUENCIA ATE 28-02-2026.csv')
+CSV_ALUNOS_PATH = os.path.join(STATIC_DIR, 'dados_alunos.csv')
+
+def _parse_csv_turma_name(nome_completo):
+    """Parse CSV turma name → (short_name, display_name, periodo, nivel)"""
+    nome = nome_completo.strip()
+
+    # Detect periodo from name
+    periodo = 'manha'
+    if 'NOITE' in nome.upper():
+        periodo = 'noite'
+    elif 'TARDE' in nome.upper():
+        periodo = 'tarde'
+
+    # Remove trailing ID after last " - "
+    parts = nome.rsplit(' - ', 1)
+    nome_base = parts[0].strip() if len(parts) > 1 else nome
+
+    # Clean display name: remove MANHA/TARDE/NOITE ANUAL
+    nome_display = re.sub(r'\s*(MANHA|TARDE|NOITE)\s*ANUAL\s*', ' ', nome_base).strip()
+
+    # Generate short name for matching with PERIODOS
+    short = ''
+    nivel = 'ensino_medio'
+
+    # Pattern: Xª SERIE Y
+    m = re.search(r'(\d)ª SERIE ([A-Z])', nome_display)
+    if m:
+        serie = m.group(1)
+        letra = m.group(2)
+        short = f'{serie}{letra}'
+        if 'ADMINISTRAÇÃO' in nome_display or 'DESENVOLVIMENTO' in nome_display:
+            nivel = 'ensino_medio_iftp'
+    else:
+        # Pattern: X° ANO Y or Xº ANO Y
+        m = re.search(r'(\d)[°º] ANO ([A-Z])', nome_display)
+        if m:
+            ano = m.group(1)
+            letra = m.group(2)
+            short = f'{ano}{letra}'
+            nivel = 'fundamental_final'
+
+    return short, nome_display, periodo, nivel
+
+
+def load_csv_frequency():
+    """Load and parse frequency data from CSV file."""
+    data = []
+    try:
+        with open(CSV_FREQ_PATH, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                turma_raw = row.get('Turma', '').strip()
+                if not turma_raw:
+                    continue
+
+                short, display, periodo, nivel = _parse_csv_turma_name(turma_raw)
+
+                # Parse Brazilian numbers: "62,3%" → 62.3
+                def parse_pct(val):
+                    try:
+                        return float(val.replace('%', '').replace(',', '.').strip())
+                    except:
+                        return 0.0
+
+                def parse_int(val):
+                    try:
+                        return int(val.strip())
+                    except:
+                        return 0
+
+                presenca_pct = parse_pct(row.get('(%) de Presença', '0'))
+                aulas_pct = parse_pct(row.get('(%) Aulas Dadas', '0'))
+                matriculas = parse_int(row.get('Matrículas Ativas', '0'))
+                aulas_prev = parse_int(row.get('Aulas Previstas', '0'))
+                aulas_dadas = parse_int(row.get('Aulas Dadas', '0'))
+
+                # Calculate actual presences/absences
+                total_registros = aulas_dadas * matriculas
+                presencas = int(total_registros * presenca_pct / 100) if total_registros else 0
+                faltas = total_registros - presencas
+
+                data.append({
+                    'nome': short,
+                    'nome_completo': turma_raw,
+                    'display': display,
+                    'periodo': periodo,
+                    'nivel': nivel,
+                    'matriculas': matriculas,
+                    'presenca_pct': presenca_pct,
+                    'aulas_previstas': aulas_prev,
+                    'aulas_dadas': aulas_dadas,
+                    'aulas_pct': aulas_pct,
+                    'presencas': presencas,
+                    'faltas': faltas,
+                    'evolucao_presenca': row.get('(%) Evolução Presença', '').strip(),
+                    'evolucao_aulas': row.get('(%) Evolução Aulas', '').strip(),
+                })
+    except Exception as e:
+        print(f"Erro ao ler CSV de frequência: {e}")
+    return data
+
+
+# Cache do CSV (carrega uma vez)
+_csv_cache = None
+_csv_cache_time = None
+
+def get_csv_data():
+    """Retorna dados do CSV com cache de 60s."""
+    global _csv_cache, _csv_cache_time
+    now = datetime.now()
+    if _csv_cache is None or _csv_cache_time is None or (now - _csv_cache_time).seconds > 60:
+        _csv_cache = load_csv_frequency()
+        _csv_cache_time = now
+    return _csv_cache
+
+
+@app.route('/api/calendario-pedagogico', methods=['GET'])
+def calendario_pedagogico():
+    """Retorna o calendário pedagógico 2026 completo."""
+    return jsonify(CALENDARIO_PEDAGOGICO_2026)
+
+
+@app.route('/api/frequencia-csv', methods=['GET'])
+def frequencia_csv():
+    """
+    Retorna dados de frequência do CSV (SEDUC-SP) processados.
+    Params: turno (manha|tarde|noite|todos), nivel (todos|ensino_medio|...)
+    """
+    turno = request.args.get('turno', 'todos')
+    nivel_filtro = request.args.get('nivel', 'todos')
+
+    data = get_csv_data()
+
+    # Aplicar filtros
+    if turno != 'todos':
+        data = [d for d in data if d['periodo'] == turno]
+    if nivel_filtro != 'todos':
+        data = [d for d in data if d['nivel'] == nivel_filtro]
+
+    # Calcular totais
+    total_alunos = sum(d['matriculas'] for d in data)
+    if total_alunos > 0:
+        media_presenca = sum(d['presenca_pct'] * d['matriculas'] for d in data) / total_alunos
+    else:
+        media_presenca = 0
+
+    total_presencas_geral = sum(d['presencas'] for d in data)
+    total_faltas_geral = sum(d['faltas'] for d in data)
+
+    # Resumo por período
+    freq_por_periodo = {}
+    for per in ['manha', 'tarde', 'noite']:
+        turmas_per = [d for d in data if d['periodo'] == per]
+        if turmas_per:
+            total_mat = sum(d['matriculas'] for d in turmas_per)
+            media = sum(d['presenca_pct'] * d['matriculas'] for d in turmas_per) / total_mat if total_mat else 0
+            freq_por_periodo[per] = {
+                'total_turmas': len(turmas_per),
+                'total_alunos': total_mat,
+                'percentual': round(media, 1),
+                'presencas': sum(d['presencas'] for d in turmas_per),
+                'faltas': sum(d['faltas'] for d in turmas_per),
+            }
+
+    # Turmas críticas (< 60%)
+    criticas = [d for d in data if d['presenca_pct'] < 60]
+
+    # Ordenar por ALL_TURMAS_ORDENADAS
+    data.sort(key=lambda x: ALL_TURMAS_ORDENADAS.index(x['nome']) if x['nome'] in ALL_TURMAS_ORDENADAS else 999)
+
+    return jsonify({
+        'fonte': 'csv_seduc',
+        'referencia': 'Fevereiro 2026',
+        'periodo_dados': '02/02/2026 a 28/02/2026',
+        'fevereiro_completo': True,
+        'contagem_faltas_inicio': '2026-02-03',
+        'resumo': {
+            'total_turmas': len(data),
+            'total_alunos': total_alunos,
+            'media_frequencia': round(media_presenca, 1),
+            'total_presencas': total_presencas_geral,
+            'total_faltas': total_faltas_geral,
+        },
+        'turmas': data,
+        'turmas_criticas': criticas,
+        'freq_por_periodo': freq_por_periodo,
+    })
+
 
 def _obter_turma_ids(nomes_turmas):
     """Obtém IDs de turmas a partir dos nomes."""
@@ -1673,6 +1938,251 @@ def health():
     return jsonify({
         'status': 'ok' if db_ok else 'erro_db',
         'db': 'turso' if USE_TURSO else 'sqlite_local',
+        'timestamp': datetime.now().isoformat(),
+    })
+
+
+# ============================================================
+# ALERTAS WHATSAPP — Painel de frequência + telefones
+# ============================================================
+
+def _load_alunos_csv():
+    """Carrega dados_alunos.csv e retorna lista de dicts com nome, turma, responsável, telefones."""
+    alunos = []
+    try:
+        # Tentar múltiplos encodings — dados_alunos.csv frequentemente é latin-1
+        content = None
+        for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1']:
+            try:
+                with open(CSV_ALUNOS_PATH, 'r', encoding=enc) as f:
+                    content = f.read()
+                break
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+
+        if content is None:
+            print("Erro: não foi possível decodificar dados_alunos.csv")
+            return alunos
+
+        reader = csv.DictReader(io.StringIO(content), delimiter=';')
+        for row in reader:
+                turma_raw = (row.get('série/ano') or row.get('s\u00e9rie/ano') or row.get('serie/ano') or '').strip()
+                nome = (row.get('nome') or row.get('Nome') or '').strip()
+                responsavel = (row.get('responsavel_lista') or row.get('Filiação 1') or row.get('Filiaçao 1') or '').strip()
+                telefones_raw = (row.get('telefones_formatados') or '').strip()
+                ra = (row.get('ra_lista') or row.get('RA') or '').strip()
+
+                if not nome or not turma_raw:
+                    continue
+
+                # Parse telefones — extrair números de celular
+                celulares = []
+                if telefones_raw:
+                    # Padrões: "Celular: (16) 994352785 - Mãe" ou "Celular Principal: (16) 981359008"
+                    matches = re.findall(r'\((\d{2})\)\s*([\d.e+]+)', telefones_raw)
+                    for ddd, num_raw in matches:
+                        # Tratar números em notação científica (ex: 9.93175e+008)
+                        try:
+                            if 'e' in num_raw.lower() or 'E' in num_raw:
+                                num_clean = str(int(float(num_raw)))
+                            else:
+                                num_clean = num_raw.replace('.', '').replace(' ', '')
+                            # Celular tem 9 dígitos e começa com 9
+                            if len(num_clean) == 9 and num_clean.startswith('9'):
+                                celulares.append(f'55{ddd}{num_clean}')
+                            elif len(num_clean) == 8 and not num_clean.startswith('9'):
+                                pass  # Fixo, ignorar para WhatsApp
+                        except:
+                            pass
+
+                # Remover duplicatas mantendo ordem
+                celulares_unicos = list(dict.fromkeys(celulares))
+
+                alunos.append({
+                    'nome': nome,
+                    'turma': turma_raw,
+                    'ra': ra,
+                    'responsavel': responsavel,
+                    'telefones_raw': telefones_raw,
+                    'celulares_whatsapp': celulares_unicos,
+                    'tem_whatsapp': len(celulares_unicos) > 0,
+                })
+    except Exception as e:
+        print(f"Erro ao ler dados_alunos.csv: {e}")
+    return alunos
+
+
+_alunos_cache = None
+_alunos_cache_time = None
+
+def _get_alunos_data():
+    """Retorna dados de alunos com cache de 120s."""
+    global _alunos_cache, _alunos_cache_time
+    now = datetime.now()
+    if _alunos_cache is None or _alunos_cache_time is None or (now - _alunos_cache_time).seconds > 120:
+        _alunos_cache = _load_alunos_csv()
+        _alunos_cache_time = now
+    return _alunos_cache
+
+
+def _classificar_turma_periodo(turma_short):
+    """Classifica turma por período baseado no nome curto (ex: '1A' → 'manha')."""
+    _PERIODOS = {
+        'manha': ['1A','1B','1C','1D','1E','1F','2A','2B','2C','2D','2E','3A','3B','3C'],
+        'tarde': ['6A','6B','6C','7A','7B','7C','8A','8B','8C','8D','9A','9B','9C','9D'],
+        'noite': ['1G','2F','2G','3D','3E'],
+    }
+    for periodo, lista in _PERIODOS.items():
+        if turma_short in lista:
+            return periodo
+    return 'desconhecido'
+
+
+@app.route('/api/alertas-frequencia', methods=['GET'])
+def alertas_frequencia():
+    """
+    Retorna dados para o painel de alertas WhatsApp.
+    Cruza dados_alunos.csv (telefones) com FREQUENCIA CSV (presença por turma).
+    Params:
+      turno: manha|tarde|noite|todos
+      tipo: todos|criticos|sem_telefone
+      turma: filtrar por turma específica (ex: 1A)
+    """
+    turno_filtro = request.args.get('turno', 'todos')
+    tipo_filtro = request.args.get('tipo', 'todos')
+    turma_filtro = request.args.get('turma', '').strip()
+
+    # Carregar dados
+    alunos = _get_alunos_data()
+    freq_data = get_csv_data()
+
+    # Criar mapa de frequência por turma (short name → dados)
+    freq_map = {}
+    for t in freq_data:
+        freq_map[t['nome']] = t
+
+    # Enriquecer alunos com dados de frequência da turma
+    resultado = []
+    for aluno in alunos:
+        turma_short = aluno['turma']
+        freq_turma = freq_map.get(turma_short, {})
+        periodo = _classificar_turma_periodo(turma_short)
+
+        # Filtro turno
+        if turno_filtro != 'todos' and periodo != turno_filtro:
+            continue
+
+        # Filtro turma
+        if turma_filtro and turma_short != turma_filtro:
+            continue
+
+        presenca_pct_turma = freq_turma.get('presenca_pct', 0)
+        aulas_previstas = freq_turma.get('aulas_previstas', 0)
+        aulas_dadas = freq_turma.get('aulas_dadas', 0)
+        display_turma = freq_turma.get('display', turma_short)
+
+        # Determinar status de alerta
+        # Status: 'critico' (< 75%), 'atencao' (75-80%), 'regular' (>= 80%)
+        if presenca_pct_turma < 75:
+            status = 'critico'
+        elif presenca_pct_turma < 80:
+            status = 'atencao'
+        else:
+            status = 'regular'
+
+        entry = {
+            'nome': aluno['nome'],
+            'turma': turma_short,
+            'turma_display': display_turma,
+            'ra': aluno['ra'],
+            'responsavel': aluno['responsavel'],
+            'periodo': periodo,
+            'celulares': aluno['celulares_whatsapp'],
+            'tem_whatsapp': aluno['tem_whatsapp'],
+            'telefones_raw': aluno['telefones_raw'],
+            'presenca_pct_turma': presenca_pct_turma,
+            'aulas_previstas': aulas_previstas,
+            'aulas_dadas': aulas_dadas,
+            'status': status,
+        }
+
+        # Filtro tipo
+        if tipo_filtro == 'criticos' and status != 'critico':
+            continue
+        if tipo_filtro == 'sem_telefone' and aluno['tem_whatsapp']:
+            continue
+
+        resultado.append(entry)
+
+    # Ordenar: críticos primeiro, depois por turma
+    resultado.sort(key=lambda x: (
+        0 if x['status'] == 'critico' else 1 if x['status'] == 'atencao' else 2,
+        x['turma'],
+        x['nome']
+    ))
+
+    # Calcular resumo
+    total_alunos = len(resultado)
+    total_criticos = sum(1 for a in resultado if a['status'] == 'critico')
+    total_atencao = sum(1 for a in resultado if a['status'] == 'atencao')
+    total_com_whatsapp = sum(1 for a in resultado if a['tem_whatsapp'])
+    total_sem_whatsapp = total_alunos - total_com_whatsapp
+
+    # Turmas críticas (< 75%)
+    turmas_criticas = [t for t in freq_data if t['presenca_pct'] < 75]
+    if turno_filtro != 'todos':
+        turmas_criticas = [t for t in turmas_criticas if t['periodo'] == turno_filtro]
+
+    # Contagem por turma
+    turmas_resumo = {}
+    for a in resultado:
+        k = a['turma']
+        if k not in turmas_resumo:
+            turmas_resumo[k] = {
+                'turma': k,
+                'display': a['turma_display'],
+                'periodo': a['periodo'],
+                'presenca_pct': a['presenca_pct_turma'],
+                'total_alunos': 0,
+                'com_whatsapp': 0,
+                'sem_whatsapp': 0,
+                'status': a['status'],
+            }
+        turmas_resumo[k]['total_alunos'] += 1
+        if a['tem_whatsapp']:
+            turmas_resumo[k]['com_whatsapp'] += 1
+        else:
+            turmas_resumo[k]['sem_whatsapp'] += 1
+
+    turmas_list = sorted(turmas_resumo.values(), key=lambda x: x.get('presenca_pct', 0))
+
+    return jsonify({
+        'resumo': {
+            'total_alunos': total_alunos,
+            'total_criticos': total_criticos,
+            'total_atencao': total_atencao,
+            'total_com_whatsapp': total_com_whatsapp,
+            'total_sem_whatsapp': total_sem_whatsapp,
+            'total_turmas_criticas': len(turmas_criticas),
+        },
+        'alunos': resultado,
+        'turmas': turmas_list,
+        'mensagem_modelo_falta': (
+            '📋 *EE Prof. Dalmaso - Aviso de Falta*\n\n'
+            'Prezado(a) responsável,\n'
+            'Informamos que o(a) aluno(a) *{nome}* ({turma} - {periodo}) '
+            'teve falta registrada no dia {data}.\n\n'
+            'Em caso de dúvidas, procure a secretaria da escola.'
+        ),
+        'mensagem_modelo_critico': (
+            '⚠️ *EE Prof. Dalmaso - Alerta de Frequência*\n\n'
+            'Prezado(a) responsável,\n'
+            'O(a) aluno(a) *{nome}* está com *{presenca}%* de presença '
+            'no bimestre atual ({turma} - {periodo}).\n'
+            'O mínimo recomendado é 75%.\n\n'
+            'A baixa frequência pode resultar em retenção por faltas. '
+            'Contamos com seu apoio!'
+        ),
         'timestamp': datetime.now().isoformat(),
     })
 

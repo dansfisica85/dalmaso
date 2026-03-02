@@ -1,0 +1,6 @@
+{
+    "chat.agent.maxRequests": 1000000,
+    "github.copilot.chat.anthropic.tools.websearch.maxUses": 20,
+    "chat.customAgentInSubagent.enabled": true,
+    "inlineChat.notebookAgent": true
+}

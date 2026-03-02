@@ -264,6 +264,8 @@ function navigateTo(pageId) {
     case 'alunos': loadAlunos(); break;
     case 'relatorios': initRelatorios(); break;
     case 'turmas': loadTurmas(); break;
+    case 'calendario-pedagogico': loadCalendarioPedagogico(); break;
+    case 'alertas-whatsapp': loadAlertasWhatsapp(); break;
     case 'importar': break;
   }
 }
@@ -320,18 +322,58 @@ function initMonitor() {
     });
   });
 
-  // Auto-refresh a cada 30 segundos (monitor 24h)
+  // Auto-refresh a cada 15 segundos (monitor 24h alive)
   if (monitorInterval) clearInterval(monitorInterval);
   monitorInterval = setInterval(() => {
     const monPage = document.getElementById('page-monitoramento');
     if (monPage && monPage.classList.contains('active')) {
       loadMonitorData(true); // silent refresh
     }
-  }, 30000);
+  }, 15000);
+
+  // Fullscreen toggle
+  const btnFS = document.getElementById('btn-fullscreen');
+  if (btnFS) {
+    btnFS.addEventListener('click', toggleFullscreen);
+  }
 
   // Primeira carga
   loadMonitorData();
 }
+
+// ── Tela Inteira ──
+function toggleFullscreen() {
+  const wrapper = document.getElementById('wrapper');
+  const btn = document.getElementById('btn-fullscreen');
+  if (!document.fullscreenElement) {
+    (wrapper || document.documentElement).requestFullscreen().then(() => {
+      document.body.classList.add('fullscreen-mode');
+      if (btn) btn.innerHTML = '<i class="bi bi-fullscreen-exit"></i>';
+    }).catch(() => {});
+  } else {
+    document.exitFullscreen().then(() => {
+      document.body.classList.remove('fullscreen-mode');
+      if (btn) btn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
+    }).catch(() => {});
+  }
+}
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    document.body.classList.remove('fullscreen-mode');
+    const btn = document.getElementById('btn-fullscreen');
+    if (btn) btn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
+  }
+});
+
+// ── Plotly dark layout base ──
+const PLOTLY_DARK_LAYOUT = {
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor: 'rgba(0,0,0,0)',
+  font: { color: '#e2e8f0' },
+  xaxis: { gridcolor: 'rgba(255,255,255,0.06)', tickfont: { color: '#94a3b8' } },
+  yaxis: { gridcolor: 'rgba(255,255,255,0.06)', tickfont: { color: '#94a3b8' } },
+  legend: { font: { color: '#cbd5e1' } },
+};
 
 async function loadMonitorData(silent = false) {
   const turno = document.getElementById('filtro-turno')?.value || 'todos';
@@ -346,18 +388,100 @@ async function loadMonitorData(silent = false) {
   });
 
   try {
-    const data = await fetch(`/api/monitoramento?${params}`).then(r => r.json());
-    if (data.erro) {
-      if (!silent) toast(data.erro, 'error');
-      return;
-    }
+    // Carregar dados do monitoramento principal E CSV em paralelo
+    const [data, csvData] = await Promise.all([
+      fetch(`/api/monitoramento?${params}`).then(r => r.json()).catch(() => null),
+      fetch(`/api/frequencia-csv?turno=${turno}&nivel=${nivel}`).then(r => r.json()).catch(() => null),
+    ]);
 
-    renderMonitorCards(data.resumo, data.alunos_criticos?.length || 0);
-    renderMonitorPeriodos(data.freq_por_periodo);
-    renderMonitorTurmasTable(data.turmas);
-    renderMonitorTurmasGrid(data.turmas);
-    renderMonitorCriticos(data.alunos_criticos || []);
-    renderMonitorCharts(data);
+    // Decidir fonte de dados: CSV tem prioridade se monitoramento não tem dados
+    const usarCSV = csvData && !csvData.erro && csvData.turmas && csvData.turmas.length > 0;
+    const monOk = data && !data.erro && data.turmas && data.turmas.length > 0;
+
+    // Atualizar badge de fonte
+    const fonteLabel = document.getElementById('monitor-fonte-label');
+    const badgeFev = document.getElementById('badge-fev');
+    
+    if (usarCSV) {
+      if (fonteLabel) fonteLabel.textContent = csvData.fonte || 'CSV SED';
+      if (badgeFev && csvData.fevereiro_completo) badgeFev.style.display = '';
+      
+      const csvResumo = csvData.resumo || {};
+      // Usar dados CSV para os cards e períodos
+      renderMonitorCards({
+        total_turmas: csvResumo.total_turmas || 0,
+        total_alunos: csvResumo.total_alunos || 0,
+        media_frequencia: Math.round(csvResumo.media_frequencia || 0),
+        total_presencas: csvResumo.total_presencas || 0,
+        total_faltas: csvResumo.total_faltas || 0,
+      }, csvData.turmas_criticas?.length || 0);
+
+      // Renderizar períodos do CSV
+      if (csvData.freq_por_periodo) {
+        const fp = csvData.freq_por_periodo;
+        renderMonitorPeriodos({
+          manha: fp.manha ? {
+            percentual: Math.round(fp.manha.percentual || 0),
+            total_turmas: fp.manha.total_turmas || 0,
+          } : {},
+          tarde: fp.tarde ? {
+            percentual: Math.round(fp.tarde.percentual || 0),
+            total_turmas: fp.tarde.total_turmas || 0,
+          } : {},
+          noite: fp.noite ? {
+            percentual: Math.round(fp.noite.percentual || 0),
+            total_turmas: fp.noite.total_turmas || 0,
+          } : {},
+        });
+      }
+
+      // Renderizar tabela e grid com dados CSV
+      const turmasFormatadas = csvData.turmas.map(t => ({
+        nome: t.nome || t.display || t.nome_completo,
+        periodo: t.periodo || 'manha',
+        nivel: t.nivel || 'ensino_medio',
+        total_alunos: t.matriculas || 0,
+        presencas: t.presencas || 0,
+        faltas: t.faltas || 0,
+        dias_registrados: t.aulas_dadas || 0,
+        percentual: Math.round(t.presenca_pct || 0),
+      }));
+      renderMonitorTurmasTable(turmasFormatadas);
+      renderMonitorTurmasGrid(turmasFormatadas);
+      renderMonitorCriticos(csvData.turmas_criticas?.map(t => ({
+        nome: t.nome || t.display || t.nome_completo,
+        ra: '-',
+        turma: t.nome || t.display,
+        presencas: t.presencas || 0,
+        faltas: t.faltas || 0,
+        total_dias: t.aulas_dadas || 0,
+        percentual: Math.round(t.presenca_pct || 0),
+      })) || []);
+
+      // Gráficos com dados CSV
+      renderMonitorCharts({
+        turmas: turmasFormatadas,
+        resumo: {
+          total_presencas: csvResumo.total_presencas || 0,
+          total_faltas: csvResumo.total_faltas || 0,
+          media_frequencia: Math.round(csvResumo.media_frequencia || 0),
+        },
+        freq_diaria: [],
+      });
+
+    } else if (monOk) {
+      if (fonteLabel) fonteLabel.textContent = 'Banco de Dados';
+      if (badgeFev) badgeFev.style.display = 'none';
+
+      renderMonitorCards(data.resumo, data.alunos_criticos?.length || 0);
+      renderMonitorPeriodos(data.freq_por_periodo);
+      renderMonitorTurmasTable(data.turmas);
+      renderMonitorTurmasGrid(data.turmas);
+      renderMonitorCriticos(data.alunos_criticos || []);
+      renderMonitorCharts(data);
+    } else {
+      if (fonteLabel) fonteLabel.textContent = 'Sem dados';
+    }
 
     // Atualizar subtítulo e hora
     const subtitulo = document.getElementById('monitor-subtitulo');
@@ -369,7 +493,8 @@ async function loadMonitorData(silent = false) {
         bimestral: 'Bimestral',
         anual: 'Anual',
       };
-      subtitulo.textContent = `${labels[monitorPeriodoAtual]} — ${data.data_inicio} a ${data.data_fim}`;
+      const periodo = usarCSV ? `Dados SED até ${csvData.referencia || '28/02/2026'}` : `${labels[monitorPeriodoAtual]} — ${data?.data_inicio || ''} a ${data?.data_fim || ''}`;
+      subtitulo.textContent = periodo;
     }
     const ultimaAtt = document.getElementById('monitor-ultima-atualizacao');
     if (ultimaAtt) ultimaAtt.textContent = `Atualizado: ${agora()}`;
@@ -529,23 +654,23 @@ function renderChartTurmas(turmas, plotCfg) {
     },
     text: percentuais.map(p => p + '%'),
     textposition: 'outside',
-    textfont: { size: 10 },
+    textfont: { size: 10, color: '#94a3b8' },
     hovertemplate: '<b>%{x}</b><br>Frequência: %{y}%<extra></extra>',
   }], {
+    ...PLOTLY_DARK_LAYOUT,
     title: { text: '', font: { size: 14 } },
     yaxis: {
+      ...PLOTLY_DARK_LAYOUT.yaxis,
       range: [0, 105],
-      title: { text: 'Frequência (%)' },
-      gridcolor: '#f1f5f9',
+      title: { text: 'Frequência (%)', font: { color: '#94a3b8' } },
     },
     xaxis: {
+      ...PLOTLY_DARK_LAYOUT.xaxis,
       tickangle: -45,
-      tickfont: { size: 10 },
+      tickfont: { size: 10, color: '#94a3b8' },
     },
     margin: { t: 20, b: 80, l: 50, r: 20 },
     height: 320,
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    paper_bgcolor: 'rgba(0,0,0,0)',
     shapes: [{
       type: 'line',
       x0: -0.5, x1: nomes.length - 0.5,
@@ -595,24 +720,23 @@ function renderChartPizza(resumo, plotCfg) {
     hole: 0.55,
     marker: {
       colors: ['#22c55e', '#ef4444'],
-      line: { color: '#fff', width: 2 },
+      line: { color: '#162231', width: 2 },
     },
     textinfo: 'percent+label',
-    textfont: { size: 12 },
+    textfont: { size: 12, color: '#e2e8f0' },
     hovertemplate: '<b>%{label}</b><br>%{value} registros<br>%{percent}<extra></extra>',
     pull: [0.02, 0.05],
     rotation: 90,
   }], {
+    ...PLOTLY_DARK_LAYOUT,
     margin: { t: 10, b: 10, l: 10, r: 10 },
     height: 320,
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    paper_bgcolor: 'rgba(0,0,0,0)',
     showlegend: true,
-    legend: { orientation: 'h', y: -0.1 },
+    legend: { orientation: 'h', y: -0.1, font: { color: '#cbd5e1' } },
     annotations: [{
       text: `<b>${resumo.media_frequencia}%</b>`,
       showarrow: false,
-      font: { size: 22, color: '#1e293b' },
+      font: { size: 22, color: '#00d4aa' },
     }],
   }, plotCfg);
 }
@@ -657,19 +781,18 @@ function renderChartTemporal(freqDiaria, plotCfg) {
   ];
 
   const layout = {
+    ...PLOTLY_DARK_LAYOUT,
     margin: { t: 10, b: 40, l: 50, r: 20 },
     height: 280,
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    paper_bgcolor: 'rgba(0,0,0,0)',
     xaxis: {
+      ...PLOTLY_DARK_LAYOUT.xaxis,
       tickangle: -30,
-      tickfont: { size: 10 },
-      gridcolor: '#f1f5f9',
+      tickfont: { size: 10, color: '#94a3b8' },
     },
     yaxis: {
+      ...PLOTLY_DARK_LAYOUT.yaxis,
       range: [0, 105],
-      title: { text: '%' },
-      gridcolor: '#f1f5f9',
+      title: { text: '%', font: { color: '#94a3b8' } },
     },
     shapes: [{
       type: 'line',
@@ -711,6 +834,172 @@ function animatePlotlyLine(el, datas, values, totais) {
 }
 
 // ============================================================
+// CALENDÁRIO PEDAGÓGICO 2026
+// ============================================================
+let calPedData = null;
+
+async function loadCalendarioPedagogico() {
+  if (calPedData) {
+    renderCalendarioPedagogico(calPedData);
+    return;
+  }
+  try {
+    calPedData = await api('/api/calendario-pedagogico');
+    renderCalendarioPedagogico(calPedData);
+  } catch (err) {
+    console.error('Erro ao carregar calendário pedagógico:', err);
+  }
+}
+
+function renderCalendarioPedagogico(cal) {
+  // Cards de resumo
+  animateCounter(document.getElementById('cp-dias-letivos'), cal.total_dias_letivos || 200);
+  animateCounter(document.getElementById('cp-feriados'), cal.feriados?.length || 0);
+  animateCounter(document.getElementById('cp-avaliacoes'), cal.avaliacoes?.length || 0);
+  animateCounter(document.getElementById('cp-olimpiadas'), cal.olimpiadas?.length || 0);
+
+  // Bimestres
+  const bimDiv = document.getElementById('cal-ped-bimestres');
+  if (bimDiv && cal.bimestres) {
+    bimDiv.innerHTML = cal.bimestres.map((b, i) => `
+      <div class="col-md-3">
+        <div class="cal-ped-bimestre bim-${i + 1}">
+          <h6>${b.nome}</h6>
+          <p class="mb-1"><i class="bi bi-calendar3"></i> ${b.inicio} a ${b.fim}</p>
+          <p class="mb-0"><strong>${b.dias_letivos}</strong> dias letivos</p>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Grid de 12 meses
+  const gridDiv = document.getElementById('cal-ped-grid');
+  if (gridDiv) {
+    gridDiv.innerHTML = _gerarCalPedGrid(cal);
+  }
+
+  // Lista de eventos
+  const eventosDiv = document.getElementById('cal-ped-lista-eventos');
+  if (eventosDiv) {
+    eventosDiv.innerHTML = _gerarListaEventos(cal);
+  }
+}
+
+function _gerarCalPedGrid(cal) {
+  const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const hojeStr = new Date().toISOString().split('T')[0];
+
+  // Build lookup maps for special dates
+  const feriadosSet = new Set((cal.feriados || []).map(f => f.data));
+  const recessosSet = new Set();
+  (cal.recessos || []).forEach(r => {
+    const start = new Date(r.inicio);
+    const end = new Date(r.fim);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      recessosSet.add(d.toISOString().split('T')[0]);
+    }
+  });
+  const avaliacoesSet = new Set();
+  (cal.avaliacoes || []).forEach(a => {
+    const start = new Date(a.inicio);
+    const end = new Date(a.fim);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      avaliacoesSet.add(d.toISOString().split('T')[0]);
+    }
+  });
+  const conselhosSet = new Set((cal.conselhos || []).map(c => c.data));
+  const reunioesSet = new Set((cal.reunioes_pais || []).map(r => r.data));
+  const replanejSet = new Set((cal.replanejamentos || []).map(r => r.data));
+  const olimpiadasSet = new Set();
+  (cal.olimpiadas || []).forEach(o => {
+    if (o.data) olimpiadasSet.add(o.data);
+    if (o.inicio && o.fim) {
+      const start = new Date(o.inicio);
+      const end = new Date(o.fim);
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        olimpiadasSet.add(d.toISOString().split('T')[0]);
+      }
+    }
+  });
+
+  // February dates (complete)
+  const fevCompleto = new Set();
+  const inicioAulas = cal.inicio_aulas || '2026-02-03';
+  const fimFev = '2026-02-28';
+  for (let d = new Date(inicioAulas); d <= new Date(fimFev); d.setDate(d.getDate() + 1)) {
+    const ds = d.toISOString().split('T')[0];
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6 && !feriadosSet.has(ds)) {
+      fevCompleto.add(ds);
+    }
+  }
+
+  const ano = cal.ano || 2026;
+  let html = '';
+  for (let m = 0; m < 12; m++) {
+    const firstDay = new Date(ano, m, 1).getDay();
+    const daysInMonth = new Date(ano, m + 1, 0).getDate();
+    html += `<div class="col-md-4 col-lg-3"><div class="monitor-chart-card p-2">`;
+    html += `<h6 class="text-center mb-2" style="color:var(--accent);">${MESES[m]}</h6>`;
+    html += '<table class="calendario-mes-table" style="width:100%;font-size:0.75rem;"><thead><tr>';
+    html += '<th>D</th><th>S</th><th>T</th><th>Q</th><th>Q</th><th>S</th><th>S</th></tr></thead><tbody><tr>';
+    for (let i = 0; i < firstDay; i++) html += '<td></td>';
+    let dow = firstDay;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${ano}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isWeekend = dow === 0 || dow === 6;
+      let cls = isWeekend ? 'dia-fds' : 'dia-util';
+      let title = '';
+
+      if (feriadosSet.has(dateStr)) { cls += ' dia-feriado'; title = 'Feriado'; }
+      else if (recessosSet.has(dateStr)) { cls += ' dia-recesso'; title = 'Recesso'; }
+      else if (avaliacoesSet.has(dateStr)) { cls += ' dia-avaliacao'; title = 'Avaliação AAP'; }
+      else if (conselhosSet.has(dateStr)) { cls += ' dia-conselho'; title = 'Conselho de Classe'; }
+      else if (reunioesSet.has(dateStr)) { cls += ' dia-reuniao'; title = 'Reunião de Pais'; }
+      else if (replanejSet.has(dateStr)) { cls += ' dia-replanejamento'; title = 'Replanejamento'; }
+      else if (olimpiadasSet.has(dateStr)) { cls += ' dia-olimpiada'; title = 'Olimpíada'; }
+      
+      if (fevCompleto.has(dateStr)) { cls += ' dia-fevereiro-completo'; title = title || 'Fevereiro - Completo'; }
+      if (dateStr === hojeStr) cls += ' dia-hoje';
+
+      html += `<td class="${cls}" title="${title}" style="text-align:center;padding:3px;cursor:default;">${d}</td>`;
+      dow++;
+      if (dow > 6) { if (d < daysInMonth) html += '</tr><tr>'; dow = 0; }
+    }
+    while (dow > 0 && dow <= 6) { html += '<td></td>'; dow++; }
+    html += '</tr></tbody></table></div></div>';
+  }
+  return html;
+}
+
+function _gerarListaEventos(cal) {
+  const eventos = [];
+  
+  (cal.feriados || []).forEach(f => eventos.push({ data: f.data, tipo: 'Feriado', nome: f.nome, cor: '#ef4444' }));
+  (cal.recessos || []).forEach(r => eventos.push({ data: r.inicio, tipo: 'Recesso', nome: `${r.nome} (${r.inicio} a ${r.fim})`, cor: '#a855f7' }));
+  (cal.avaliacoes || []).forEach(a => eventos.push({ data: a.inicio, tipo: 'Avaliação', nome: `${a.nome} (${a.inicio} a ${a.fim})`, cor: '#22d3ee' }));
+  (cal.conselhos || []).forEach(c => eventos.push({ data: c.data, tipo: 'Conselho', nome: c.nome, cor: '#facc15' }));
+  (cal.reunioes_pais || []).forEach(r => eventos.push({ data: r.data, tipo: 'Reunião Pais', nome: r.nome, cor: '#fb923c' }));
+  (cal.replanejamentos || []).forEach(r => eventos.push({ data: r.data, tipo: 'Replanejamento', nome: r.nome, cor: '#6366f1' }));
+  (cal.olimpiadas || []).forEach(o => eventos.push({ data: o.data || o.inicio, tipo: 'Olimpíada', nome: o.nome, cor: '#f472b6' }));
+  if (cal.provao_paulista) {
+    cal.provao_paulista.forEach(p => eventos.push({ data: p.inicio, tipo: 'Provão Paulista', nome: `${p.nome} (${p.inicio} a ${p.fim})`, cor: '#00d4aa' }));
+  }
+
+  eventos.sort((a, b) => (a.data || '').localeCompare(b.data || ''));
+
+  return `<div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>Data</th><th>Tipo</th><th>Evento</th></tr></thead>
+    <tbody>${eventos.map(e => `
+      <tr>
+        <td><small>${e.data || '-'}</small></td>
+        <td><span class="badge" style="background:${e.cor};color:#fff;">${e.tipo}</span></td>
+        <td>${e.nome}</td>
+      </tr>
+    `).join('')}</tbody></table></div>`;
+}
+
+// ============================================================
 // INÍCIO (Grid de turmas → clique abre Calendário)
 // ============================================================
 async function loadInicio() {
@@ -718,6 +1007,24 @@ async function loadInicio() {
     turmasCache = await api('/api/turmas');
     const grid = document.getElementById('grid-inicio');
     const vazio = document.getElementById('inicio-vazio');
+
+    // Se DB está vazio, carregar turmas do CSV
+    if (!turmasCache.length) {
+      try {
+        const csvData = await fetch('/api/frequencia-csv').then(r => r.json());
+        if (csvData && csvData.turmas && csvData.turmas.length) {
+          turmasCache = csvData.turmas.map((t, i) => ({
+            id: -(i + 1), // IDs negativos para turmas CSV
+            nome: t.nome || t.display,
+            display: t.display || t.nome,
+            total_alunos: t.matriculas || 0,
+            periodo: t.periodo || 'manha',
+            nivel: t.nivel || 'ensino_medio',
+            _csv: true,
+          }));
+        }
+      } catch (e) { /* CSV indisponível */ }
+    }
 
     if (!turmasCache.length) {
       grid.innerHTML = '';
@@ -731,6 +1038,8 @@ async function loadInicio() {
 
     const filtrado = turmasCache.filter(t => {
       if (turnoAtivo === 'todos') return true;
+      // Suportar turmas do banco (por nome no PERIODOS_CONFIG) e do CSV (por campo periodo)
+      if (t._csv) return t.periodo === turnoAtivo;
       const periodo = PERIODOS_CONFIG[turnoAtivo] || [];
       return periodo.includes(t.nome);
     });
@@ -742,19 +1051,26 @@ async function loadInicio() {
 
     grid.innerHTML = filtrado.map(t => {
       // Detect period
-      let periodo = 'manha';
-      for (const [p, lista] of Object.entries(PERIODOS_CONFIG)) {
-        if (lista.includes(t.nome)) { periodo = p; break; }
+      let periodo = t.periodo || 'manha';
+      if (!t._csv) {
+        for (const [p, lista] of Object.entries(PERIODOS_CONFIG)) {
+          if (lista.includes(t.nome)) { periodo = p; break; }
+        }
       }
       const bgColor = periodo === 'manha' ? '#f59e0b' : periodo === 'tarde' ? '#3b82f6' : '#6366f1';
+      const displayName = t.display || t.nome;
+      const onclickAction = t._csv
+        ? `toast('Turma ${displayName.replace(/'/g, "\\'")} — dados somente leitura do CSV SED', 'info')`
+        : `abrirCalendario(${t.id}, '${t.nome.replace(/'/g, "\\'")}')`;
       return `
       <div class="col-md-4 col-lg-3">
-        <div class="turma-card-inicio" onclick="abrirCalendario(${t.id}, '${t.nome.replace(/'/g, "\\'")}')">
+        <div class="turma-card-inicio" onclick="${onclickAction}">
           <div class="turma-icon" style="background:${bgColor};">
             <i class="bi bi-${periodo === 'manha' ? 'sunrise' : periodo === 'tarde' ? 'sun' : 'moon-stars'}"></i>
           </div>
-          <h4>${t.nome}</h4>
+          <h4>${displayName}</h4>
           <span class="alunos-count">${t.total_alunos || 0} alunos</span>
+          ${t._csv ? '<span class="badge badge-fonte mt-1" style="font-size:0.65rem;"><i class="bi bi-database"></i> CSV SED</span>' : ''}
         </div>
       </div>`;
     }).join('');
@@ -804,6 +1120,9 @@ function renderCalendario() {
 function gerarCalendarioHTML(ano, dadosFreq) {
   const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const hojeStr = new Date().toISOString().split('T')[0];
+  // Fevereiro 2026 marcado como completo (a partir de 03/02)
+  const fevCompletoInicio = `${ano}-02-03`;
+  const fevCompletoFim = `${ano}-02-28`;
   let html = '<div class="calendario-grid">';
   for (let m = 0; m < 12; m++) {
     const firstDay = new Date(ano, m, 1).getDay();
@@ -820,6 +1139,10 @@ function gerarCalendarioHTML(ano, dadosFreq) {
       let cls = isWeekend ? 'dia-fds' : 'dia-util';
       if (hasData) cls += ' dia-registrado';
       if (dateStr === hojeStr) cls += ' dia-hoje';
+      // Marcar fevereiro como completo
+      if (m === 1 && ano === 2026 && !isWeekend && dateStr >= fevCompletoInicio && dateStr <= fevCompletoFim) {
+        cls += ' dia-fevereiro-completo';
+      }
       if (!isWeekend) {
         html += `<td class="${cls}" onclick="abrirChamada('${dateStr}')">${d}</td>`;
       } else {
@@ -1288,8 +1611,9 @@ function renderRelFrequencia(div, data) {
     type: 'bar',
     marker: { color: data.alunos.map(a => a.percentual >= 75 ? '#22c55e' : a.percentual >= 50 ? '#f59e0b' : '#ef4444') },
   }], {
-    title: 'Frequência por Aluno (%)',
-    yaxis: { range: [0, 100], title: '%' },
+    ...PLOTLY_DARK_LAYOUT,
+    title: { text: 'Frequência por Aluno (%)', font: { color: '#e2e8f0' } },
+    yaxis: { ...PLOTLY_DARK_LAYOUT.yaxis, range: [0, 100], title: '%' },
     margin: { t: 40, b: 100 },
     height: 350,
   }, { responsive: true, displayModeBar: false });
@@ -1307,7 +1631,7 @@ function renderRelPerfil(div, data) {
   `;
 
   const plotCfg = { responsive: true, displayModeBar: false };
-  const layoutBase = { margin: { t: 10, b: 30, l: 30, r: 10 }, height: 280, showlegend: true };
+  const layoutBase = { ...PLOTLY_DARK_LAYOUT, margin: { t: 10, b: 30, l: 30, r: 10 }, height: 280, showlegend: true };
 
   // Sexo
   Plotly.newPlot('chart-rel-sexo', [{
@@ -1593,4 +1917,318 @@ async function iaAnalisarFrequencia() {
   } finally {
     iaCarregando = false;
   }
+}
+
+// ============================================================
+// ALERTAS WHATSAPP
+// ============================================================
+
+let _wppCache = null;
+let _wppFiltroTurno = 'todos';
+let _wppFiltroTipo = 'todos';
+let _wppPagina = 1;
+const WPP_POR_PAGINA = 50;
+
+async function loadAlertasWhatsapp() {
+  try {
+    const params = new URLSearchParams({ turno: _wppFiltroTurno, tipo: _wppFiltroTipo });
+    const data = await fetch(`/api/alertas-frequencia?${params}`).then(r => r.json());
+    _wppCache = data;
+
+    // Cards de resumo
+    const r = data.resumo;
+    _wppSetText('wpp-total-alunos', r.total_alunos);
+    _wppSetText('wpp-total-criticos', r.total_criticos);
+    _wppSetText('wpp-com-telefone', r.total_com_whatsapp);
+    _wppSetText('wpp-sem-telefone', r.total_sem_whatsapp);
+    _wppSetText('wpp-total-atencao', r.total_atencao);
+    _wppSetText('wpp-turmas-criticas', r.total_turmas_criticas);
+
+    // Gráfico
+    _wppRenderChart(data.turmas);
+
+    // Tabela
+    _wppPagina = 1;
+    _wppRenderTabela(data.alunos);
+
+    // Listeners (só na primeira vez)
+    _wppInitListeners();
+
+  } catch (err) {
+    console.error('Erro ao carregar alertas WhatsApp:', err);
+  }
+}
+
+function _wppSetText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val ?? '--';
+}
+
+let _wppListenersInit = false;
+function _wppInitListeners() {
+  if (_wppListenersInit) return;
+  _wppListenersInit = true;
+
+  // Turno buttons
+  document.querySelectorAll('#wpp-turno-btns .btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#wpp-turno-btns .btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _wppFiltroTurno = btn.dataset.turno;
+      loadAlertasWhatsapp();
+    });
+  });
+
+  // Tipo buttons
+  document.querySelectorAll('#wpp-tipo-btns .btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#wpp-tipo-btns .btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _wppFiltroTipo = btn.dataset.tipo;
+      loadAlertasWhatsapp();
+    });
+  });
+
+  // Busca
+  const buscaInput = document.getElementById('wpp-busca-aluno');
+  if (buscaInput) {
+    let timer;
+    buscaInput.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        _wppPagina = 1;
+        _wppRenderTabela(_wppFilterBySearch(_wppCache?.alunos || []));
+      }, 300);
+    });
+  }
+
+  // Exportar
+  const btnExportar = document.getElementById('wpp-btn-exportar');
+  if (btnExportar) btnExportar.addEventListener('click', _wppExportarCSV);
+
+  // Config modal
+  const btnConfig = document.getElementById('wpp-btn-config');
+  if (btnConfig) {
+    btnConfig.addEventListener('click', (e) => {
+      e.preventDefault();
+      const modal = new bootstrap.Modal(document.getElementById('modalConfigWhatsapp'));
+      // Carregar valores salvos
+      const cfg = JSON.parse(localStorage.getItem('wpp_config') || '{}');
+      document.getElementById('wpp-api-url').value = cfg.url || '';
+      document.getElementById('wpp-api-token').value = cfg.token || '';
+      document.getElementById('wpp-instancia').value = cfg.instancia || '';
+      modal.show();
+    });
+  }
+
+  // Salvar config
+  const btnSalvar = document.getElementById('wpp-btn-salvar-config');
+  if (btnSalvar) {
+    btnSalvar.addEventListener('click', () => {
+      const cfg = {
+        url: document.getElementById('wpp-api-url').value.trim(),
+        token: document.getElementById('wpp-api-token').value.trim(),
+        instancia: document.getElementById('wpp-instancia').value.trim(),
+      };
+      localStorage.setItem('wpp_config', JSON.stringify(cfg));
+      bootstrap.Modal.getInstance(document.getElementById('modalConfigWhatsapp'))?.hide();
+      toast('Configuração salva no navegador!', 'success');
+    });
+  }
+}
+
+function _wppFilterBySearch(alunos) {
+  const busca = (document.getElementById('wpp-busca-aluno')?.value || '').toLowerCase().trim();
+  if (!busca) return alunos;
+  return alunos.filter(a =>
+    a.nome.toLowerCase().includes(busca) ||
+    a.turma.toLowerCase().includes(busca) ||
+    (a.responsavel || '').toLowerCase().includes(busca) ||
+    (a.ra || '').includes(busca)
+  );
+}
+
+function _wppRenderChart(turmas) {
+  const container = document.getElementById('wpp-chart-turmas');
+  if (!container || !turmas?.length) return;
+
+  const nomes = turmas.map(t => t.display || t.turma);
+  const valores = turmas.map(t => t.presenca_pct);
+  const cores = valores.map(v => v < 75 ? '#ef4444' : v < 80 ? '#f59e0b' : '#00d4aa');
+
+  const trace = {
+    x: nomes, y: valores, type: 'bar',
+    marker: { color: cores, line: { color: cores.map(c => c), width: 1 } },
+    text: valores.map(v => v.toFixed(1) + '%'),
+    textposition: 'outside',
+    textfont: { size: 10, color: '#94a3b8' },
+  };
+
+  const layout = {
+    ...PLOTLY_DARK_LAYOUT,
+    margin: { t: 10, b: 80, l: 50, r: 20 },
+    xaxis: { ...PLOTLY_DARK_LAYOUT.xaxis, tickangle: -45, tickfont: { size: 9, color: '#94a3b8' } },
+    yaxis: { ...PLOTLY_DARK_LAYOUT.yaxis, title: 'Presença (%)', range: [0, 105] },
+    shapes: [{
+      type: 'line', x0: -0.5, x1: nomes.length - 0.5, y0: 75, y1: 75,
+      line: { color: '#ef4444', width: 2, dash: 'dash' },
+    }],
+    annotations: [{
+      x: nomes.length - 1, y: 75, text: '75% mínimo', showarrow: false,
+      font: { color: '#ef4444', size: 10 }, yshift: 12,
+    }],
+  };
+
+  Plotly.newPlot(container, [trace], layout, { responsive: true, displayModeBar: false });
+}
+
+function _wppRenderTabela(alunos) {
+  const body = document.getElementById('wpp-tabela-body');
+  const info = document.getElementById('wpp-tabela-info');
+  if (!body) return;
+
+  const filtrados = _wppFilterBySearch(alunos || []);
+  const total = filtrados.length;
+  const totalPaginas = Math.ceil(total / WPP_POR_PAGINA);
+  const inicio = (_wppPagina - 1) * WPP_POR_PAGINA;
+  const pagina = filtrados.slice(inicio, inicio + WPP_POR_PAGINA);
+
+  if (!pagina.length) {
+    body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Nenhum aluno encontrado.</td></tr>';
+    if (info) info.textContent = '0 alunos';
+    return;
+  }
+
+  const periodoLabel = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite', desconhecido: '—' };
+
+  body.innerHTML = pagina.map(a => {
+    const statusBadge = a.status === 'critico'
+      ? '<span class="wpp-badge-critico">Crítico</span>'
+      : a.status === 'atencao'
+        ? '<span class="wpp-badge-atencao">Atenção</span>'
+        : '<span class="wpp-badge-regular">Regular</span>';
+
+    const freqColor = a.presenca_pct_turma < 75 ? '#ef4444' : a.presenca_pct_turma < 80 ? '#f59e0b' : '#00d4aa';
+    const freqBar = `<div class="wpp-freq-bar">
+      <div class="wpp-freq-bar-bg"><div class="wpp-freq-bar-fill" style="width:${Math.min(a.presenca_pct_turma, 100)}%;background:${freqColor};"></div></div>
+      <span class="wpp-freq-bar-label" style="color:${freqColor};">${a.presenca_pct_turma.toFixed(1)}%</span>
+    </div>`;
+
+    const phoneCel = a.celulares?.length
+      ? a.celulares.map(c => `<span class="wpp-phone-display">${_wppFormatPhone(c)}</span>`).join('<br>')
+      : '<span class="wpp-phone-none">Sem telefone</span>';
+
+    const wppLink = a.celulares?.length
+      ? `<button class="btn-wpp-enviar" onclick="_wppEnviarMsg('${a.celulares[0]}', '${a.nome.replace(/'/g, "\\\\'")}')"
+          title="Enviar mensagem WhatsApp"><i class="bi bi-whatsapp"></i> Enviar</button>`
+      : '<button class="btn-wpp-enviar" disabled><i class="bi bi-telephone-x"></i></button>';
+
+    return `<tr>
+      <td>${statusBadge}</td>
+      <td class="aluno-nome" title="${a.nome}">${a.nome}</td>
+      <td><strong>${a.turma}</strong></td>
+      <td>${periodoLabel[a.periodo] || a.periodo}</td>
+      <td style="font-size:0.78rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${a.responsavel || ''}">${a.responsavel || '—'}</td>
+      <td>${phoneCel}</td>
+      <td>${freqBar}</td>
+      <td>${wppLink}</td>
+    </tr>`;
+  }).join('');
+
+  if (info) info.textContent = `Exibindo ${inicio + 1}-${Math.min(inicio + WPP_POR_PAGINA, total)} de ${total} alunos`;
+
+  // Paginação
+  _wppRenderPaginacao(totalPaginas, filtrados);
+}
+
+function _wppRenderPaginacao(totalPaginas, alunos) {
+  const pag = document.getElementById('wpp-paginacao');
+  if (!pag || totalPaginas <= 1) { if (pag) pag.innerHTML = ''; return; }
+
+  let html = '';
+  const maxBtns = 7;
+  let start = Math.max(1, _wppPagina - 3);
+  let end = Math.min(totalPaginas, start + maxBtns - 1);
+  if (end - start < maxBtns - 1) start = Math.max(1, end - maxBtns + 1);
+
+  if (_wppPagina > 1) html += `<li class="page-item"><a class="page-link" href="#" data-pg="${_wppPagina - 1}">&laquo;</a></li>`;
+  for (let i = start; i <= end; i++) {
+    html += `<li class="page-item ${i === _wppPagina ? 'active' : ''}""><a class="page-link" href="#" data-pg="${i}">${i}</a></li>`;
+  }
+  if (_wppPagina < totalPaginas) html += `<li class="page-item"><a class="page-link" href="#" data-pg="${_wppPagina + 1}">&raquo;</a></li>`;
+
+  pag.innerHTML = html;
+  pag.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      _wppPagina = parseInt(a.dataset.pg);
+      _wppRenderTabela(alunos);
+    });
+  });
+}
+
+function _wppFormatPhone(num) {
+  // 5516994352785 → (16) 99435-2785
+  if (!num || num.length < 12) return num;
+  const ddd = num.substring(2, 4);
+  const rest = num.substring(4);
+  if (rest.length === 9) return `(${ddd}) ${rest.substring(0,5)}-${rest.substring(5)}`;
+  return `(${ddd}) ${rest}`;
+}
+
+function _wppEnviarMsg(numero, nomeAluno) {
+  const cfg = JSON.parse(localStorage.getItem('wpp_config') || '{}');
+
+  if (cfg.url && cfg.token && cfg.instancia) {
+    // Envio via Evolution API
+    const msg = _wppCache?.mensagem_modelo_critico
+      ?.replace('{nome}', nomeAluno)
+      ?.replace('{presenca}', '--')
+      ?.replace('{turma}', '--')
+      ?.replace('{periodo}', '--') || `Aviso sobre frequência de ${nomeAluno}`;
+
+    fetch(`${cfg.url}/message/sendText/${cfg.instancia}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: cfg.token },
+      body: JSON.stringify({ number: numero, text: msg }),
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.key || d.status === 'PENDING') toast(`Mensagem enviada para ${nomeAluno}!`, 'success');
+      else toast('Erro ao enviar. Verifique a configuração.', 'error');
+    })
+    .catch(() => toast('Falha na conexão com Evolution API.', 'error'));
+  } else {
+    // Fallback: abrir WhatsApp Web
+    const texto = encodeURIComponent(`Prezado(a) responsável, informamos sobre a frequência do(a) aluno(a) ${nomeAluno}. Em caso de dúvidas, procure a secretaria da escola EE Prof. Dalmaso.`);
+    window.open(`https://wa.me/${numero}?text=${texto}`, '_blank');
+  }
+}
+
+function _wppExportarCSV() {
+  if (!_wppCache?.alunos?.length) { toast('Sem dados para exportar', 'error'); return; }
+
+  const filtrados = _wppFilterBySearch(_wppCache.alunos);
+  const linhas = [
+    ['Status', 'Aluno', 'Turma', 'Período', 'RA', 'Responsável', 'WhatsApp', 'Freq Turma (%)'].join(';'),
+    ...filtrados.map(a => [
+      a.status,
+      `"${a.nome}"`,
+      a.turma,
+      a.periodo,
+      a.ra,
+      `"${a.responsavel || ''}"`,
+      a.celulares?.join(' / ') || 'SEM TELEFONE',
+      a.presenca_pct_turma?.toFixed(1),
+    ].join(';'))
+  ];
+
+  const blob = new Blob(['\uFEFF' + linhas.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `alertas_whatsapp_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`${filtrados.length} alunos exportados!`, 'success');
 }
